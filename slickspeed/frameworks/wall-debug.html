@@ -1,0 +1,208 @@
+<!doctype html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Wall Selector Debug Version</title>
+<style>
+* {
+	margin: 0; padding: 0;
+}
+div {
+	line-height: 24px;
+}
+div.line {
+	line-height: 24px;
+	font-size: 14px;
+	border-bottom: 1px inset #ccc;
+}
+.line .number {
+	border-right:1px outset #ccc;
+	background: #f4f4f4;
+}
+.line .content {
+	margin:1px 5px
+}
+div.container {
+	width: 49%;
+	height: 100%;
+	border: 1px solid #999;
+	display: none;
+}
+#log {
+	float: right;
+}
+#debug {
+	float: left;
+}
+#code {
+	clear: both;
+	overflow: hidden;
+	border: 1px solid #666;
+	margin-top: 20px;
+}
+#code .wrapper {
+	margin: 10px;
+	height: 500px;
+}
+#code textarea {
+	width: 100%;
+	height: 100%;
+	border-width: 0;
+	font-size: 16px;
+	color: #000;
+	font-family: Tahoma;
+	outline: 0;
+}
+
+</style>
+<script>
+	var logs = function(str){console.log(str)};
+</script>
+<script src="js-format.js"></script>
+<!--<script src="wall-debug.js"></script>
+<script src="wall-unit.js"></script>-->
+<script src="wall-compile.js"></script>
+<script>
+/*
+ js_format(js_source, tabsize, tabchar);
+ */
+log.line = 1;
+function log(str) {
+	var div = document.createElement("div");
+	var tmpl = "<table cellspacing='0' cellpadding='0' border='0' style='width:100%'>" +
+					 "  <tr><td width='32' align='center' valign='top' class='number'>$$LINE$$</td><td width='*'><div class='content'>$$INFO$$</div></td>";
+	div.innerHTML = tmpl.replace('$$LINE$$', log.line++).replace('$$INFO$$', str);
+	div.className = 'line';
+	setTimeout(function() {
+		document.getElementById("log").style.display = "block";
+		document.getElementById("log").appendChild(div);
+	}, 50);
+}
+
+debug.line = 1;
+function debug(str) {
+	var div = document.createElement("div");
+	var tmpl = "<table cellspacing='0' cellpadding='0' border='0' style='width:100%'>" +
+					 "  <tr><td width='32' align='center' valign='top' class='number'>$$LINE$$</td><td width='*'><div class='content'>$$INFO$$</div></td>";
+	div.innerHTML = tmpl.replace('$$LINE$$', debug.line++).replace('$$INFO$$', str);
+	div.className = 'line';
+	setTimeout(function() {
+		document.getElementById("debug").style.display = "block";
+		document.getElementById("debug").appendChild(div);
+	}, 50);
+}
+debug.code = function(str) {
+	var d = document.getElementById("code").getElementsByTagName('textarea')[0];
+	if (d.value.length > 0) return;
+	d.value = str;
+};
+</script>
+</head>
+<body class="样式！">
+<div style="overflow: hidden" id="console">
+	<div id="debug" class="container"></div>
+	<div id="log" class="container"></div>
+</div>
+<div id="code"><div class="wrapper"><textarea></textarea></div></div>
+
+<div 选中="1" style="display:none"></div>
+<input type='hidden' t='0' id='id' />
+<span t='1'>
+	<input type='hidden' t='match1' />
+	<div t='11' style="display:none">
+		<input type='hidden' t='0011' />
+		<span t='111'>
+			<input type='hidden' t='match2' />	
+		</span>
+		<span t='112'>
+			<font></font>
+		</span>
+	</div>
+</span>
+<span t=''>
+	<input type='hidden' t='match3' />
+	<span t='21'></span>
+</span>
+<input type='hidden' t='1' id="abc" />
+
+<div style="display:none" id='p'>
+	<div id="idtest" class="className class className2" className="class">
+		<span s="target span">
+			<font s="target font"></font>
+		</span>
+	</div>
+</div>
+<script>
+var t_1 = "[n\\_@ame='=@\\1!#$%^&*()_+|-=;:[]{},.<>/?23'] div#name , p span[abc='007']", 
+	t_2 = "div[ab='123'][qa='456']:first-child",
+	t_3 = "div#abc[de中文支持f='007'],p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1),p:nth-child(2n+1)",
+	t_4 = ".abc:checked",
+	t_5 = "div#ggg[abc='\"((123+de)* (def+(ms*2)))']input>span.class	p:not([attr='not']) , span：checked  font ,   img";
+var t_6 = "*.class#id[attr='val']:checked:nth-child(2n+1) > p:checked(2n+1), div *:not(span img)";
+var t_7 = "~div:only-child ~ div.className.className2#idtest[abc|='class'] span:not(span .abc.ddf#notid) > font:lang(zh-cn)::first-line:checkbox *";
+var t_8 = "body div.className.className2#idtest[className~='class'] > span";
+var t_9 = "html body > [t='1']";
+var t_10 = "span font";
+var t_11 = 'div + input';
+var t_12 = 'div ~ div';
+var t_13 = 'a b.bb.bbb > c > d ~ f + g';
+var t_14 = 'a > b > c';
+var t_15 = '> div[a="123"]';
+var t_16 = '> *';
+var t_17 = "#code textarea";
+var t_18 = '#idtest > span[s]';
+var t_19 = "> html";
+var t_20 = "p:nth-child(2n)";
+var t_21 = "div[class!='made_up']";
+
+var t_22 = "h1[id]:contains(Selectors)";
+var t_23 = "[id=title]";
+var t_24 = "div ~ div";
+var t_25 = "div > div";
+var t_26 = "p";
+var t_27 = "div[class~=example]";
+var t_28 = "div[class]";
+var t_29 = "div[class^=exa][class$=mple]";
+var t_30 = "div.example, div.note";
+var t_31 = ".subtoc li[class^=tocline] a";
+var t_32 = "div p";
+var t_33 = "[att='123']";
+
+function $run(txt) {
+	debug(txt);
+	console.log(veryQuery(txt));
+}
+
+//$run(t_20);
+//$run(t_21);
+//$run(t_22);
+//$run(t_23);
+$run(t_24);
+//$run(t_25);
+//$run(t_26);
+//$run(t_27);
+//$run(t_28);
+//$run(t_29);
+//$run(t_30);
+//$run(t_31);
+//$run(t_32);
+//$run(t_33);
+
+/*debug(t_8);
+console.log(compile(t_8));
+var cases = [];
+for (var i = 1; i < 16; i++) {
+	cases.push(eval('t_'+i));
+}
+unit.work(compile, cases, function(text){
+	return !(/\$\{[0-9A-Z]\}/.test(text));
+}, true);
+
+setTimeout(function(){
+	unit.work(compile, cases, function(text){
+		return !(/\$\{[0-9A-Z]\}/.test(text));
+	}, true);
+}, 2000);*/
+</script>
+</body>
+</html>
