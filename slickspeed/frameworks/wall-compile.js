@@ -42,7 +42,7 @@ var veryQuery = (function(window, undefined) {
 	var chunker = /(?:\[\s*([^='"~\s\]]*[^='"~\s~^$|*!])(?:\s*([~^$|*!]?=)\s*(['"]?)(.*?)\3)?\s*\])|((?:\.|#|:|::)?)([\w\u00A1-\uFFFF-]+|\*)(?:\((\([^()]+\)|[^()]+)+\))?([\w\u00A1-\uFFFF-]*)?|(?:\s*([~+>,\s])\s*)/g,
 		rMatchPos = /([+\-]?)(\d*)(?:n([+\-]?\d*))?/,
 		cid = 0,
-		scaler = {
+		order = {
 			':root': 10,
 			'+': 10,
 			'#': 0,
@@ -60,6 +60,26 @@ var veryQuery = (function(window, undefined) {
 			' ': 0,
 			'*': 0
 		},
+		testOrder = {
+			'#': 9,
+			'=': 9,
+			'[': 8,
+			'N': 9,
+			'T': 8,
+			'.': 5,
+			'~=': 3,
+			'|=': 3,
+			'*=': 3,
+			':not': 6,
+			':has': 1,
+			':contains': 3,
+			':nth-child': 2,
+			':nth-last-child': 2,
+			':first-child': 3,
+			':last-child': 3,
+			':only-child': 3,
+			':not-ex': 7
+		},
 		checker = {
 			'#': 1,
 			'T': 1,
@@ -70,23 +90,30 @@ var veryQuery = (function(window, undefined) {
 			'>T': 1,
 			'+': support.hasByElement ? 1 : 0,
 			'~': support.hasByElement ? 1 : 0
+		},
+		testSorter = function ( a, b ){
+			return a.$tr - b.$tr;
 		};
 
-	function compile(expr, strict) {
-		strict && (scaler['#'] = 9);
-		var group = parse(expr);
+	function compile( expr, strict ) {
+		var group = parse( expr ),
+			len = group.length;
 		//console.log(group.slice(0));
 		//console.log(">>>>>>>>>>>>>>>>>");
-		var len = group.length;
-		while (len--) {
-			var chain  = group[len];
-			var code = build(chain);
+		if ( strict ) {
+			order[ '#' ] = 9;
+		}
+
+		while ( len-- ) {
+			var chain  = group[ len ],
+				code = build( chain );
 			//console.log(chain);
 			//console.log(code.slice(0));
-			
-			var hash = {};
-			var pres = [];
-			var posts = [];
+
+			var hash = {},
+				pres = [],
+				posts = [];
+
 			code = code.replace(/\/\*\^(.*?)\^\*\//g, function (m, p){
 				return (hash[p] || (hash[p] = pres.push(p)), '');
 			});
@@ -113,25 +140,26 @@ var veryQuery = (function(window, undefined) {
         }
 	}
 
-	var cacheParsed = {};
-	//parse Selector String
+	//parse selector to internal format
 	var parse = function() {
-		var text;
-		var index;
+		var text, index;
+
 		function error() { 
 			throw ['SyntaxError', text,  "index: " + (index - 1)]; 
 		}
-		function match(regex) {
-			var mc = (regex.lastIndex = index, regex.exec(text));
+
+		function match( regex ) {
+			var mc = ( regex.lastIndex = index, regex.exec(text) );
 			return mc && mc.index == index ? (index = regex.lastIndex, mc) : null;
 		}
+
 		function parse() {
 			var m, q = [], c = [q], g = [c];
-	
+
 			while ( (m = match(chunker)) !== null ) {
 				//[ ~+>,]分组与位置关系
-				if (m[9]) {
-					if (m[9] == ",") {
+				if ( m[9] ) {
+					if ( m[9] == "," ) {
 						//以,开始的或者连续多个,的selector不符合语法
 						c.length == 1 && q.length == 0 && error();
 						g.push(c = [ q = [] ]);
@@ -143,23 +171,29 @@ var veryQuery = (function(window, undefined) {
 						q.$union = m[9].replace(/\s/g, " ");
 					}
 				}
-				//属性
-				if (m[1]) {
-					if (m[2] && m[4] !== undefined) {
+				//attribute [attr='xxx']
+				else if ( m[1] ) {
+					//[attr='xxx']
+					if ( m[2] && typeof( m[4] ) != 'undefined' ) {
 						q.push( make(m[2], [m[1], m[4]]) );
-					} else {
+					}
+					//[attr]
+					else {
 						q.push( make("[", [m[1]]) );
 					}
 				}
-				//类 ID 伪类
-				if (m[6]) {
+				//.class #ID :pseduo
+				else if ( m[6] ) {
 					if (m[5]) {
-						if (m[5].indexOf(":") < 0) {
+						//.class | #id
+						if ( m[5].indexOf(":") === -1 ) {
 							q.push( make(m[5], [m[6]]) );
-						} else {
-							//非法的pseudo选择器
+						}
+						//[:|::]pseduo
+						else {
+							//invalid/unsupported pseduo
 							m[8] || !(true) && error();
-							if (m[7]) {
+							if ( m[7] ) {
 								if (m[6] == 'not' || m[6] == 'has') {
 									var _i = index, _t = text;
 									(index = 0, text = text.slice(_i - m[7].length - 1, _i - 1));
@@ -177,266 +211,309 @@ var veryQuery = (function(window, undefined) {
 					}
 				}
 			}
+
 			return g;
 		}
-		return function(selector) {
-			index = 0;
-			text = selector;
-			selector = cacheParsed[text];
-			if (typeof selector === 'undefined') {
-				selector = parse();
-				//return (match(/\s*/g), index < text.length) ? error() : selector;
-				return (match(/\s*/g), index < text.length) ? error() : (cacheParsed[text] = selector, selector);
-			}
-			return selector;
+
+		return function( selector ) {
+			( text = selector, index = 0, selector = parse() );
+			return ( match(/\s*/g), index < text.length ) ? error() : selector;
 		};
 	}();
-	//window.parse = parse;
 
-	function make(kind, array) {
-		return (array.$kind = kind, array);
+	function make( kind, array ) {
+		return ( array.$kind = kind, array );
 	}
 
-	function format(template, props) {
+	function format( template, props ) {
 		return template.replace(/\$\{([^\}]+)\}/g, function(m, p) {
 			 return props[p] == null ? m : props[p] + '';
-		})
+		});
 	}
 
-	//Clean-up Selector(merge attributes/class etc.)
-	function clean(q) {
-		var i = 0, s, t, f, index, $classes;
-		for(; s = q[i]; i++) {
-			switch (s.$kind) {
+	//clean-up selector
+	//1. merge attributes/class etc.
+	//2. sort selector order for testing.
+	//3. caculte the fast selector
+	function clean( q ) {
+		var i = 0, s, t, f, index, classes;
+
+		for ( ; s = q[i]; i++ ) {
+			switch ( s.$kind ) {
 				//:html ==> tag:html
 				case ':html':
 					s = make('T', ['html']);
 					break;
 				case '=':
-					//合并 [name='xxx'];
-					if (s[0] === 'name' && s[1]) {
-						s = make('N', [s[1]]);
-					}
-					//合并[id='xxx']
-					else if (s[0] === 'id' && s[1]) {
-						s = make('#', [s[1]]);
+					if ( s[1] ) {
+						//[name='xxx'] ===> getElementsByName('xxx')
+						if ( s[0] === 'name' ) {
+							s = make( 'N', [s[1]] );
+						}
+						//[id='xxx'] ==> #xxx
+						else if ( s[0] === 'id' ) {
+							s = make( '#', [s[1]] );
+						}
 					}
 					break;
-				//合并[class~="xxx"]
+				//[class~="xxx"] ===> .xxx
+				//[className~="xxx"] ===> .xxx
 				case '~=':
-					if (s[0] === 'class' && s[1]) {
-						s = make('.', [s[1]]);
+					if ( s[1] && s[0] === 'class' || s[0] === 'className' ) {
+						s = make( '.', [s[1]] );
 					}
 					break;
-				//nodeName = *
 				case 'T':
-					if (s[0] == '*') {
+					//*.class | *[xxx]
+					if ( s[0] === '*' ) {
 						s.$kind = '*';
-					} else if (q.$union == '>') {
+					} else if ( q.$union == '>' ) {
 						//>T
 						q.$tag = i;
 					}
 					break;
-				//合并 .class.class2
-				case '.':
-					if (!$classes) {
-						$classes = s;
-					} else {
-						$classes.push(s[0]);
-						s.$kind = '*';
-						q.splice(i--, 1);
-					}
-					break;
-				//将:not(expr)转换为:not-ex(expr)
+				//:not(expr) ===> :not-ex(expr)
 				case ':not':
-					if (!((t=s[0], t.length == 1) && (t=t[0], t.length == 1))) {
+					if ( !((t=s[0], t.length == 1) && (t=t[0], t.length == 1)) ) {
 						s.$kind = ':not-ex';
 					}
 					break;
 			}
-			//计算选择器的得分, 用于优先级排序等
-			s.$pri =  scaler[s.$kind] | 0;
-			if (!f || s.$pri > f.$pri) {
+
+			//merge .class.class2
+			if ( s.$kind === '.' ) {
+				if ( !classes ) {
+					classes = s;
+				} else {
+					classes.push( s[0] );
+					s.$kind = '*';
+					q.splice( i--, 1 );
+				}
+			}
+
+			s.$pri =  order[s.$kind] | 0;
+			s.$tr = testOrder[s.$kind] | 0;
+
+			//find the fast selector for sorting and testing
+			if ( !f || s.$pri > f.$pri ) {
 				f = s;
 				index = i;
 			}
-			if (s.$kind != '*') {
+
+			if ( s.$kind !== '*' ) {
 				q[i] = s;
 			}
 		}
-		q.$ = f;
-		q.$index = index;
-		return q;
+
+		q.sort( testSorter );
+
+		return ( q.$ = f, q.$index = index, q );
 	}
 
 	//compute and clean-up selector chain
-	function compute(chain) {
-		var seed;
-		var seq;
-		var part;
-		var len = chain.length;
-		var i;
-		var j = 0;
-		for (i = 0; i < len; i++) {
+	function compute( chain ) {
+		var seq,
+			part,
+			seed,
+			tag,
+			len = chain.length,
+			i = 0,
+			j = 0;
+
+		for ( ; i < len; i++ ) {
 			seq = chain[i];
-			seq = clean(seq);
+			seq = clean( seq );
 			seq.N = '_n' + i;
-			part = chain[i - 1];
+			part = chain[ i - 1 ];
 			seq.R = part ? part.N : 'root';
-			if (!chain.$ || seq.$.$pri >= chain.$.$pri) {
-				chain.$ = seq.$;
+
+			if ( !seed || seq.$.$pri >= seed.$pri ) {
+				seed = seq.$;
 				chain.$index = i;
 			}
 		}
+
 		j = chain.$index === 0 ? 0 : chain.$index + 1;
-		//检查>T是否是最佳选择器
-		for (; j < len; j++) {
-			seq = chain[j];
-			if (support.hasChildrenTag && seq.$union == '>' && seq.$tag != undefined && scaler['>T'] > seq.$.$pri) {
-				var tag = seq[seq.$tag];
-				seq.$ = make('>T', [tag[0]]);
-				tag.$kind = '*';
-			} else if (scaler[seq.$union] > seq.$.$pri) {
-				seq.$ = make(seq.$union, []);
-			}
-			if (chain.$index === 0) {
-				chain.$ = seq.$;
-			}
-		}
-		//TODO: 处理没有找到最优选择器的情况
-		if (!chain.$.$pri) {
-			
-		}
-		//如果是最左边的选择器是联合选择器 检查root
 		chain[0].$first = true;
-		chain[0].$union != ' ' && (chain[0].$check = chain.$index != 0);
-		//console.log([chain.slice(0)]);
-		//console.warn('**********');
+
+		for ( ; j < len; j++ ) {
+			seq = chain[j];
+
+			if ( support.hasChildrenTag && seq.$union === '>' && typeof( seq.$tag ) !== 'undefined' && order['>T'] > seq.$.$pri ) {
+				tag = seq[ seq.$tag ];
+				seq.$ = make( '>T', [tag[0]] );
+				tag.$kind = '*';
+			} else if ( order[ seq.$union ] > seq.$.$pri ) {
+				seq.$ = make( seq.$union, [] );
+			}
+
+			if ( j === 0 && chain.$index === 0  ) {
+				seed = seq.$;
+			}
+		}
+
+		if ( seed.$pri === 0 && seed.$kind !== '*' ) {
+			seed = make( 'T', ['*'] );
+			chain[ chain.$index ].$ = seed;
+			chain[ chain.$index ].push( seed );
+		}
+
+		//check root
+		if ( chain[0].$union != ' ' ) {
+			chain[0].$check = chain.$index !== 0;
+		}
+
+		return chain;
 	}
 
-	function build(chain) {
+	function build( chain ) {
 		cid = 0;
-		compute(chain);
-		//console.log([chain.slice(0)]);
-		var index = chain.$index;
-		var seed = chain[index];
-		if (!(seed.$.$kind in scaler)) {
-			seed.$ = make('T', ['*']);
+		chain = compute( chain );
+
+		var index = chain.$index,
+			seed = chain[ index ],
+			code = find( seed, true ),
+			next = right( chain, template.push ),
+			prev;
+		
+		if ( index > 0 ) {
+			prev = left( chain );
+			next = format( prev, {Y: next} );
 		}
-		var code = find(seed, true);
-		var next = right(chain, template.push);
-		if (index > 0) {
-			var prev = left(chain);
-			next = format(prev, {Y: next});
-		}
-		code = format(code, {X: next});
-		return format('${X}', {X: code});
+
+		code = format( code, {X: next} );
+
+		return format( '${X}', {X: code} );
 	}
 
-	//seeds
-	function find(q, isSeed) {
-		var d = q.$,
-			code = template.find[d.$kind],
-			val = d && (d.$kind == '.' ? d.shift() : d[0]);
-		!checker[d.$kind] && q.push(make(':element', []));
-		if (d.$kind != '.') {
-			d.$kind = '*';
+	//find the seed of nodes
+	function find( q, isSeed ) {
+		var sc = q.$,
+			code = template.find[ sc.$kind ],
+			val = sc && ( sc.$kind === '.' ? sc.shift() : sc[0] );
+
+		if ( !checker[ sc.$kind ] ) {
+			q.push( make(':element', []) );
 		}
+
+		//do not test seed selector
+		if ( sc.$kind !== '.' || sc.length === 0 ) {
+			sc.$kind = '*';
+		}
+
 		return format(code, {
 			P: val,
 			N: q.N,
 			R: isSeed ? 'root' : q.R,
-			X: then(q)
+			X: then( q )
 		});
 	}
 
-	//descendants
-	function right(chain, then) {
-		var code = '${X}';
-		var k = chain.$index + 1;
-		var len = chain.length;
-		var part = chain[chain.length-1];
-		for (; k < len; k++) {
-			code = format( code, {X: find( chain[k] )} );
+	//filter descendants
+	function right( chain, then ) {
+		var i = chain.$index + 1,
+			len = chain.length,
+			code = '${X}',
+			part = chain[ chain.length-1 ],
+			next;
+
+		for ( ; i < len; i++ ) {
+			code = format( code, {X: find( chain[i] )} );
 		}
-		var next;
-		if (!then) {
+
+		if ( !then ) {
 			next = format( template.help, {N: part.N} );
 			code = format( code, {X: next} );
 		} else {
 			next = format( then, {N: part.N} );
 			code = format( code, {X: next} );
 		}
+
 		return code;
 	}
 
-	//ancestors
-	function left(chain) {
-		var code = template.left;
-		for (var i = chain.$index - 1; i > -1; i--) {
-			var q = chain[i];
-			var last = chain[i+1];
+	//filter ancestors
+	function left( chain ) {
+		var code = template.left,
+			i = chain.$index - 1,
+			q,
+			last;
+
+		for ( ; i > -1; i-- ) {
+			q = chain[ i ];
+			last = chain[ i+1 ];
 			code = format( code, {X: pass(q, last.N, last.$union)} );
 		}
+
 		code = format( code, {X: template.pass.exit} );
 		code = format( code, {R: chain[0].R} );
+
 		return code;
 	}
 
-	function pass(q, term, union){
+	function pass( q, term, union ){
 		return format(template.pass[union], {
 			N: q.N,
 			C: term,
-			X: then(q)
+			X: then( q )
 		});
 	}
 
-	function then(q) {
-		var code = filter(q);
-		code = code ? 'if('+code+'){${X}}' : '';
-		if (q.$first && q.$union != ' ' && q.$check) {
-			code = format(code, {X: template.radix[q.$union]});
+	function then( q ) {
+		var code = filter( q );
+
+		code = code ? 'if(' + code + '){${X}}' : '';
+
+		if ( q.$first && q.$union != ' ' && q.$check ) {
+			code = format( code, {X: template.radix[q.$union]} );
 		}
+
 		return code ? format(code, { N: q.N }) : '${X}';
 	}
 
-	function filter(q) {
-		var s = [];
-		var k = q.length;
-		var m;
-		var code;
-		while (k--) {
+	function filter( q ) {
+		var s = [],
+			k = q.length,
+			m,
+			code;
+
+		while ( k-- ) {
 			m = q[k];
-			if (code = test(m)) {
-				s.push(code);
+
+			if ( code = test( m ) ) {
+				s.push( code );
 			}
 		}
-		return s.join(' && ');
+
+		return s.join( ' && ' );
 	}
 
 	//check attributes
-	function test(m) {
+	function test( m ) {
 		var t;
-		if (m.$kind.indexOf('=') > -1) {
-			m.A = attr(m[0]);
+
+		if ( m.$kind.indexOf( '=' ) > -1 ) {
+			m.A = attr( m[0] );
 		}
+
 		switch( m.$kind ) {
 			case '.':
-				var k = m.length;
-				var s = [];
-				if (k === 0) {
+				var k = m.length,
+					s = [];
+
+				if ( k === 0 ) {
 					return '';
 				}
-				while (k--) {
-					s.push('t.indexOf(" ${'+ k +'} ")!==-1');
+
+				while ( k-- ) {
+					s.push( 't.indexOf(" ${'+ k +'} ")!==-1' );
 				}
+
 				t = '(t=${N}.className)&&((t=" "+t+" "),(' + s.join(' && ') + '))';
-				return format(t, m);
-			case '~=':
-				m.P = m[0];
-				break;
+
+				return format( t, m );
 			case ':not':
-				t = filter(m[0][0][0]);
+				t = filter( m[0][0][0] );
 				return t ? '!(' + t + ')' : 'false';
 			case ':not-ex':
 			case ':has':
@@ -444,32 +521,33 @@ var veryQuery = (function(window, undefined) {
 				break;
 			case ':nth-child':
 				m[0] = m[0] === 'even' ? '2n' : (m[0] === 'odd' ? '2n+1' : m[0]);
-				var test = rMatchPos.exec(m[0]),
-					a = (test[1] + (test[2] || 1)) - 0,
-					b = test[3] - 0;
-				m[1] = a;
-				m[2] = b;
+				t = rMatchPos.exec( m[0] );
+				m[1] = (t[1] + (t[2] || 1)) - 0;
+				m[2] = t[3] - 0;
 				break;
 			case '*':
 				return '';
 			default:
 				break;
 		}
-		var code = format(template.test[m.$kind], m);
-		//console.warn('test ');
-		//console.log([m]);
-		//console.log(code);
-		//console.warn('<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n');
-		return code;
+
+		return format( template.test[m.$kind], m );
 	}
 
 	//special attributes
-	function attr(name) {
-		if (name === 'for') return '${N}.htmlFor';
-		if (name === 'class') return '${N}.className';
-		if (name === 'type') return '${N}.getAttribute("type")';
-		if (name === 'href') return '${N}.getAttribute("href",2)';
-		return '(${N}["' + name + '"]||${N}.getAttribute("' + name + '"))';
+	function attr( name ) {
+		switch ( name ) {
+			case 'for':
+				return '${N}.htmlFor';
+			case 'class':
+				return '${N}.className';
+			case 'type':
+				return '${N}.getAttribute("type")';
+			case 'href':
+				return '${N}.getAttribute("href",2)';
+			default:
+				return '(${N}["' + name + '"]||${N}.getAttribute("' + name + '"))';
+		}
 	}
 
 	//templates
@@ -522,12 +600,12 @@ var veryQuery = (function(window, undefined) {
 		'N': '${N}.name==="${0}"',
 		'[': support.isIE678 ? '(t=${N}.getAttributeNode("${0}"))&&(t.specified)' : '${N}.hasAttribute("${0}")',
 		'=': '${A}==="${1}"',
-		'!=': '${A}!="${1}"',
+		'!=': '${A}!=="${1}"',
 		'^=': '(t=${A})&&t.indexOf("${1}")===0',
 		'$=': '(t=${A})&&t.indexOf("${1}")===(t.length - "${1}".length)',
 		'*=': '(t=${A})&&t.indexOf("${1}")>-1',
 		'|=': '(t=${A})&&t.indexOf("-${1}-")>-1',
-		'~=': '(t=${A})&&(" "+t+" ").indexOf("${P}")!==-1',
+		'~=': '(t=${A})&&(" "+t+" ").indexOf("${1}")!==-1',
 
 		':root': '${N}===document.documentElement',
 		':nth-child': template.doc + '/*^var rev=query.verocache;^*/query._index(${N},${1},${2},rev)',
