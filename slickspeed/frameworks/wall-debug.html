@@ -168,16 +168,21 @@ var t_31 = ".subtoc li[class^=tocline] a";
 var t_32 = "div p";
 var t_33 = "[att='123']";
 
+var t_34 = ".c1.c2.c3 span";
+var t_35 = ">div[attr~='123xxx']";
+
 function $run(txt) {
 	debug(txt);
 	console.log(veryQuery(txt));
 }
 
+
+$run(t_7);
 //$run(t_20);
 //$run(t_21);
 //$run(t_22);
 //$run(t_23);
-$run(t_24);
+//$run(t_24);
 //$run(t_25);
 //$run(t_26);
 //$run(t_27);
@@ -187,6 +192,8 @@ $run(t_24);
 //$run(t_31);
 //$run(t_32);
 //$run(t_33);
+//$run(t_34);
+//$run(t_35);
 
 /*debug(t_8);
 console.log(compile(t_8));
