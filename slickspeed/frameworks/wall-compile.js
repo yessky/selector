@@ -91,7 +91,7 @@ var veryQuery = (function(window, undefined) {
 			'+': support.hasByElement ? 1 : 0,
 			'~': support.hasByElement ? 1 : 0
 		},
-		testSorter = function ( a, b ){
+		testSorter = function ( a, b ) {
 			return a.$tr - b.$tr;
 		};
 
@@ -120,22 +120,25 @@ var veryQuery = (function(window, undefined) {
 			code = code.replace(/\/\*\$(.*?)\$\*\//g, function (m, p){
 				return (hash[p] || (hash[p] = posts.push(p)), '');
 			});
-			code = format(template.main, { X: pres.join('') + code + posts.join('') });
+			code = format( template.main, { X: pres.join('') + code + posts.join('') } );
 			//code = js_format(code);
 			group[len] = new Function('query', 'return(' + code + ')')(query);
 			//debug.code(code);
 			//console.log('**********************\n\n');
 		}
 
-		if (group.length == 1) {
+		if ( group.length == 1 ) {
             return group[0];
         }
-        return function (root){
-            var k = group.length;
-            var rs = [];
-            while (k--) {
-                rs.push.apply(rs, group[k](root));
+
+        return function ( root ) {
+            var k = group.length,
+            	rs = [];
+
+            while ( k-- ) {
+                rs.push.apply( rs, group[k](root) );
             }
+
             return rs;
         }
 	}
@@ -236,13 +239,13 @@ var veryQuery = (function(window, undefined) {
 	//2. sort selector order for testing.
 	//3. caculte the fast selector
 	function clean( q ) {
-		var i = 0, s, t, f, index, classes;
+		var i = 0, s, t, f, classes;
 
 		for ( ; s = q[i]; i++ ) {
 			switch ( s.$kind ) {
 				//:html ==> tag:html
 				case ':html':
-					s = make('T', ['html']);
+					s = make( 'T', ['html'] );
 					break;
 				case '=':
 					if ( s[1] ) {
@@ -269,7 +272,7 @@ var veryQuery = (function(window, undefined) {
 						s.$kind = '*';
 					} else if ( q.$union == '>' ) {
 						//>T
-						q.$tag = i;
+						q.$tag = s;
 					}
 					break;
 				//:not(expr) ===> :not-ex(expr)
@@ -297,7 +300,6 @@ var veryQuery = (function(window, undefined) {
 			//find the fast selector for sorting and testing
 			if ( !f || s.$pri > f.$pri ) {
 				f = s;
-				index = i;
 			}
 
 			if ( s.$kind !== '*' ) {
@@ -305,9 +307,7 @@ var veryQuery = (function(window, undefined) {
 			}
 		}
 
-		q.sort( testSorter );
-
-		return ( q.$ = f, q.$index = index, q );
+		return ( q.sort( testSorter ), q.$ = f, q );
 	}
 
 	//compute and clean-up selector chain
@@ -315,7 +315,6 @@ var veryQuery = (function(window, undefined) {
 		var seq,
 			part,
 			seed,
-			tag,
 			len = chain.length,
 			i = 0,
 			j = 0;
@@ -340,9 +339,8 @@ var veryQuery = (function(window, undefined) {
 			seq = chain[j];
 
 			if ( support.hasChildrenTag && seq.$union === '>' && typeof( seq.$tag ) !== 'undefined' && order['>T'] > seq.$.$pri ) {
-				tag = seq[ seq.$tag ];
-				seq.$ = make( '>T', [tag[0]] );
-				tag.$kind = '*';
+				seq.$ = make( '>T', [seq.$tag[0]] );
+				seq.$tag.$kind = '*';
 			} else if ( order[ seq.$union ] > seq.$.$pri ) {
 				seq.$ = make( seq.$union, [] );
 			}
