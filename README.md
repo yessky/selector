@@ -1,4 +1,4 @@
-veroQuery
+kquery
 =========
 
-a new and full implemention css3 selector
+kquery - A Super Fast And Compatible Css3 Selector Engine.
