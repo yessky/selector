@@ -9,9 +9,9 @@ then the generated query function was cached, but it nerver cache results, so th
 
 ## Usage
 
-kquery(#id|.class|tag), it's the same like using jQuery selector(sizzle).
+kquery(#id|.class|tag), it's the same like using jQuery selector (sizzle).
 
-	see more: <a href="http://veryos.com/projects/kquery" target="_blank">http://veryos.com/projects/kquery</a>
+see more: <a href="http://veryos.com/projects/kquery" target="_blank">http://veryos.com/projects/kquery</a>
 
 ## Contact
 
