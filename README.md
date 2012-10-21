@@ -19,8 +19,8 @@ admin@veryos.com aaron.xiao
 
 ## Help
 
-If you have any questions, feel free to create ticket or contact via email.
+If you have any questions, feel free to <a href="https://github.com/yessky/kquery/issues/new" target="_blank">create ticket</a> or <a href="mailto:admin@veryos.com" target="_blank">contact via email</a>.
 
 ## License
 
-KQuery is available under the terms of the MIT License.
+KQuery is available under the terms of the <a href="http://veryos.com/projects/LICENSE.md" target="_blank">MIT License</a>.
