@@ -6,6 +6,10 @@ With its compile system, it makes that KQuery's speed is faster and the result i
 Because it find the best query logic while compling, it is always executes the best logic,
 then the generated query function was cached, but it nerver cache results, so the result is reliable even the dom is changing continually.
 
+## How Fast ?
+
+speed test at: <a href="http://test.veryos.com/selector/slickspeed/index.html" target="_blank">Slickspeed</a>
+testsuite at: <a href="http://test.veryos.com/selector/testsuite.html" target="_blank">Testsuite</a>
 
 ## Usage
 
