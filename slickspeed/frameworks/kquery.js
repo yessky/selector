@@ -9,11 +9,11 @@
  * License: http://veryos.com/projects/MIT-LICENSE
  * 
  * Credits:
+ * Q.js - https://github.com/hackwaly/Q
+ *   - main idea of compile system
  * Sizzle.js - http://sizzlejs.org
  *   - qsa buggy detection
  *   - node sort method in browser does not support compareDocumentPosition
- * Q.js - https://github.com/hackwaly/Q
- *   - main idea of compile system
  */
 
 (function( global, undefined ) {
@@ -21,6 +21,7 @@
 var version = '1.0',
 	document = global.document,
 	docElem = document.documentElement,
+	scope = global.K || (global.K = {}),
 
 	// Whitespace characters http://www.w3.org/TR/css3-selectors/#whitespace
 	whitespace = "[\\x20\\t\\r\\n\\f]",
@@ -1358,11 +1359,7 @@ if ( document.querySelectorAll ) {
 	})();
 }
 
-global.kquery = kquery;
-global.cacheQueries = cacheQueries;
-global.rgroups = rgroups;
-global.rmatches = rmatches;
-global.hasByElement = hasByElement;
-global.hasByTagID = hasByTagID;
+// Expose api
+scope.query = kquery;
 
 })( this );
