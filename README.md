@@ -13,7 +13,7 @@ testsuite at: <a href="http://test.veryos.com/selector/testsuite.html" target="_
 
 ## Usage
 
-kquery(#id|.class|tag), it's the same like using jQuery selector (sizzle).
+K.query(exper), it's the same like using jQuery selector (sizzle).
 
 see more: <a href="http://veryos.com/projects/kquery" target="_blank">http://veryos.com/projects/kquery</a>
 
