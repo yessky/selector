@@ -21,7 +21,7 @@
 var version = '1.0',
 	document = global.document,
 	docElem = document.documentElement,
-	scope = global.K || (global.K = {}),
+	scope = global.K || ( global.K = {} ),
 
 	// Whitespace characters http://www.w3.org/TR/css3-selectors/#whitespace
 	whitespace = "[\\x20\\t\\r\\n\\f]",
@@ -452,10 +452,10 @@ var chainPos = 0,
 	tplfind = {
 		'#': tpldoc + 'var ${N}=query._byId("${P}",${R});if(${N}){${X}}',
 		'N': tpldoc + 'var ${N}a=doc.getElementsByName("${P}");for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){if(${R}===doc||' + format( tplcontains, ['${R}', '${N}'] ) +'){${X}}}',
-		'T': 'var ${N}a=query._byTag("${P}",${R});for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
+		'T': 'var ${N}a=${R}.getElementsByTagName("${P}");for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
 		'.': 'var ${N}a=${R}.getElementsByClassName("${P}");for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
-		'*': 'var ${N}a=query._byTag("*",${R});for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
-		'[': 'var ${N}a=query._byTag("*",${R});for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
+		'*': 'var ${N}a=${R}.getElementsByTagName("*");for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
+		'[': 'var ${N}a=${R}.getElementsByTagName("*");for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
 		'+': hasByElement ? '/*^var ${N};^*/if(${N}=${R}.nextElementSibling){${X}}' : 
 			 'var ${N}=${R};while(${N}=${N}.nextSibling){if(${N}.nodeType===1){${X}break;}}',
 		'~': hasByElement ?
@@ -464,9 +464,9 @@ var chainPos = 0,
 		'>': 'var ${N}a=${R}.children||${R}.childNodes;for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
 		'>T': 'var ${N}a=${R}.children.tags("${P}");for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
 		':root': tpldoc + 'var ${N}a=[doc.documentElement];for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
-		':link': 'var ${N}a=query._byTag("a",${R});for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
-		':visited': 'var ${N}a=query._byTag("a",${R});for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
-		':checked': 'var ${N}a=query._byTag("input",${R});for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
+		':link': 'var ${N}a=${R}.getElementsByTagName("a");for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
+		':visited': 'var ${N}a=${R}.getElementsByTagName("a");for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
+		':checked': 'var ${N}a=${R}.getElementsByTagName("input");for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
 		':enabled': tpldoc + 'var ${N}a=query("input,select,textarea,option",doc,null,xml);for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){if(${N}.disabled===false){${X}}}',
 		':disabled': tpldoc + 'var ${N}a=query("input,select,textarea,option",doc,null,xml);for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){if(${N}.disabled===true){${X}}}'
 	},
@@ -845,7 +845,7 @@ function find( q, seed, xml ) {
 		q.push( make(':element', []) );
 	}
 
-	// Skip test seed selector
+	// Skip seed selector
 	if ( type !== '.' || sc.length === 0 ) {
 		sc._type = '*';
 	}
@@ -1077,32 +1077,6 @@ if ( hasNameMixID ) {
 				m :
 				null :
 			null;
-	};
-}
-
-query._byTag = function( tag, ctx ) {
-	return ctx.getElementsByTagName( tag );
-};
-
-if ( hasTagComment ) {
-	query._byTag = function( tag, ctx ) {
-		var ret = ctx.getElementsByTagName( tag );
-
-		if ( tag === "*" ) {
-			var elem,
-				tmp = [],
-				i = 0;
-
-			for ( ; (elem = ret[i]); i++ ) {
-				if ( elem.nodeType === 1 ) {
-					tmp.push( elem );
-				}
-			}
-
-			return tmp;
-		}
-
-		return ret;
 	};
 }
 
