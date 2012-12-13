@@ -582,7 +582,7 @@ function compile( expr, xml ) {
 			return ( hash[p] || (hash[p] = posts.push(p)), '' );
 		});
 
-		code = format( tplmain, { X: pres.join('') + code + posts.join('') } );
+		code = format( tplmain, {X: pres.join('') + code + posts.join('')} );
 		group[len] = new Function('query', 'return(' + code + ')')(query);
 	}
 
@@ -598,7 +598,8 @@ function compile( expr, xml ) {
 			push.apply( ret, group[len](ctx) );
 		}
 
-		return kquery.uniqueSort( ret );
+		return ret;
+		//return kquery.uniqueSort( ret );
     }
 }
 
