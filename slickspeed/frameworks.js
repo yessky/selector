@@ -11,7 +11,7 @@ Frameworks = {
     },
     "kquery": {
         file: "kquery.js",
-        fun: "kquery"
+        fun: "K.query"
 
     },
     "nwmatcher": {
