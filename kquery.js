@@ -661,7 +661,7 @@ var parse = function() {
 								var _i = index, _t = text;
 								(index = 0, text = text.slice(_i - m[7].length - 1, _i - 1));
 								q.push( make(t, [parse(), text]) );
-								( index = _i + 1, text = _t );
+								( index = _i, text = _t );
 							} else {
 								q.push( make(t, [m[7]]) );
 							}
@@ -873,7 +873,7 @@ function right( chain, then, xml ) {
 		part = chain[i];
 		type = part.$._type;
 
-		if ( !uniqueness[type] ) {
+		if ( type == ' ' ) {
 			next = format( tplhelp, {N: seed.N} );
 			code = format( code, {X: next} );
 		}
