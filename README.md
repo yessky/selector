@@ -1,4 +1,4 @@
-A Super Fast And Compatible CSS3 Selector Engine(2.0 building)
+A Super Fast And Compatible CSS3 Selector Engine
 =========
 
 KQuery is a full implemention css3 selector engine, support ie6+/chrome/firefox/opera/safari, no xpath.
