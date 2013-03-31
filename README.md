@@ -1,21 +1,41 @@
-A Super Fast And Compatible CSS3 Selector Engine
+A Super Fast And Compatible CSS Selector Engine
 =========
 
-KQuery is a full implemention css3 selector engine, support ie6+/chrome/firefox/opera/safari, no xpath.
-With its compile system, it makes that KQuery's speed is faster and the result is more reliable than other selector engines.
-Because it find the best query logic while compling, it is always executes the best logic,
-then the generated query function was cached, but it nerver cache results, so the result is reliable even the dom is changing continually.
+kquery is a pure-JavaScript css selector engine with full implemention of css3 selector.
 
-## How Fast ?
+## Compatibility
 
-speed test at: <a href="http://test.veryos.com/selector/slickspeed/index.html" target="_blank">Slickspeed</a>
-testsuite at: <a href="http://test.veryos.com/selector/testsuite.html" target="_blank">Testsuite</a>
+	all major browsers ie6+/chrome/firefox/opera/safari.
+
+## Light
+
+	20kb minified.
+
+	only 8.0kB minified and gzipped.
+
+## Fast
+
+	smart compiler engine will optimize the query logic, keep these which really needs.
+	
+	it's faster than all Sizzle(jquery) version, nwmatcher, peppy without cache, dojo/query.
+
+	speed test at: <a href="http://test.veryos.com/selector/slickspeed/index.html" target="_blank">Slickspeed</a>
+
+## Reliable
+
+	never cache results, query function was cached.
+
+	testsuite at: <a href="http://test.veryos.com/selector/testsuite.html" target="_blank">Testsuite</a>
+
+## Documents support
+
+	works on both XML/HTML.
 
 ## Usage
 
-K.query(exper), it's the same like using jQuery selector (sizzle).
+kquery( exper ), it's the same like using jQuery selector (Sizzle).
 
-see more: <a href="http://veryos.com/projects/kquery" target="_blank">http://veryos.com/projects/kquery</a>
+see more: <a href="http://kquery.veryos.com/" target="_blank">http://kquery.veryos.com/</a>
 
 ## Contact
 
@@ -25,6 +45,8 @@ admin@veryos.com aaron.xiao
 
 If you have any questions, feel free to <a href="https://github.com/yessky/kquery/issues/new" target="_blank">create ticket</a> or <a href="mailto:admin@veryos.com" target="_blank">contact via email</a>.
 
+weibo:  <a href="http://weibo.com/veryos" target="_blank">http://weibo.com/veryos</a>.
+
 ## License
 
-KQuery is available under the terms of the <a href="http://veryos.com/lab/license" target="_blank">MIT License</a>.
+kquery is available under the terms of the <a href="http://kquery.veryos.com/MIT License" target="_blank">MIT License</a>.
