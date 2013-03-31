@@ -49,4 +49,4 @@ weibo:  <a href="http://weibo.com/veryos" target="_blank">http://weibo.com/veryo
 
 ## License
 
-kquery is available under the terms of the <a href="http://kquery.veryos.com/MIT License" target="_blank">MIT License</a>.
+kquery is available under the terms of the <a href="https://github.com/yessky/kquery/blob/master/LICENSE.md" target="_blank">MIT License</a>.
