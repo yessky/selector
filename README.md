@@ -13,19 +13,19 @@ kquery is a pure-JavaScript css selector engine with full implemention of css3 s
 
 	only 8.0kB minified and gzipped.
 
-## Fast
+## Super Fast
 
 	smart compiler engine will optimize the query logic, keep these which really needs.
 	
 	it's faster than all Sizzle(jquery) version, nwmatcher, peppy without cache, dojo/query.
 
-	speed test at: <a href="http://test.veryos.com/selector/slickspeed/index.html" target="_blank">Slickspeed</a>
+speed test at: <a href="http://test.veryos.com/selector/slickspeed/index.html" target="_blank">Slickspeed</a>.
 
 ## Reliable
 
 	never cache results, query function was cached.
 
-	testsuite at: <a href="http://test.veryos.com/selector/testsuite.html" target="_blank">Testsuite</a>
+testsuite at: <a href="http://test.veryos.com/selector/testsuite.html" target="_blank">Testsuite</a>.
 
 ## Documents support
 
