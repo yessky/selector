@@ -81,7 +81,7 @@ function mixin(accepter, sender) {
 }
 
 function isXML( node, numeric ) {
-	var r = node && (node.ownerDocument || node).documentElement;,
+	var r = node && (node.ownerDocument || node).documentElement,
 		x = r ? r.nodeName !== 'HTML' : false;
 	return numeric ? Number( x ) : x;
 }
@@ -1316,6 +1316,8 @@ function kquery( selector, context, seed ) {
 	// All others
 	return queryEngine.query( selector.replace( rtrim, "$1" ), context, seed );
 }
+
+kquery.compile = queryEngine.compile;
 
 kquery.matches = function( selector, elements ) {
 	return kquery( selector, null, elements );
