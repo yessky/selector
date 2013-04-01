@@ -81,7 +81,7 @@ function mixin(accepter, sender) {
 }
 
 function isXML( node, numeric ) {
-	var r = (node ? node.ownerDocument || node : 0).documentElement,
+	var r = node && (node.ownerDocument || node).documentElement;,
 		x = r ? r.nodeName !== 'HTML' : false;
 	return numeric ? Number( x ) : x;
 }
@@ -940,7 +940,7 @@ queryEngine = function() {
 				+ 'for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){',
 			strvelem = has.byTagWithComment ? 'if(${N}.nodeType===1){${X}}' : '${X}',
 			strvtags = 'var ${N}a=${R}.getElementsByTagName("*");'
-				+ format( strvelem, {X: strvloop} ),
+				+ format( strvloop, {X: strvelem} ),
 			strvlinks = 'var ${N}a=${R}.getElementsByTagName("a");' + strvloop;
 
 		mixin(vars, {find: {
@@ -1360,15 +1360,11 @@ kquery.error = function( msg ) {
 	throw new Error( 'SyntaxError: ' + msg );
 };
 
-// Speed-up pseudos for :nth-xx-xx
-if ( !queryHas(0).qsa ) {
-	queryEngine.compile( 'div:nth-child(odd)' );
-	queryEngine.compile( 'div:nth-last-child(odd)' );
-	queryEngine.compile( 'div:nth-of-type(odd)' );
-	queryEngine.compile( 'div:nth-last-of-type(odd)' );
+// Expose
+if ( typeof define === "function" && define.amd ) {
+	define(function() { return kquery; });
+} else {
+	window.kquery = kquery;
 }
-
-// Expose API
-window.kquery = kquery;
 
 })( window );
