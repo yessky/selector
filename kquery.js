@@ -659,20 +659,19 @@ queryEngine = function() {
 		// Compile experssion to executable functions
 		compile: function( expr ) {
 			var smain = this.vars.main,
-				sequnce = this._compile[ expr + ' ' ],
-				i, tokens, token, done;
+				query = this._compile[ expr + ' ' ],
+				i, tokens, token;
 
-			if ( sequnce ) { return sequnce; }
+			if ( query ) { return query; }
 
 			tokens = this._tokenize[ expr + ' ' ] ||
 				this._tokenize( expr, tokenize( expr ) );
 			i = tokens.length;
-			sequnce = [];
 
 			while ( i-- ) {
 				var token = tokens[ i ],
 					code = this.build( token ),
-					shash = {}, svars = [];
+					shash = {}, svars = [], done;
 
 				// Define variables at the beginning of function statement
 				code = code.replace(/\/\*\^(.*?)\^\*\//g, function( m, p ) {
@@ -681,10 +680,25 @@ queryEngine = function() {
 				code = format( smain, {X: svars.join('') + code + ''} );
 
 				done = new Function( 'query', 'return (' + code + ');' );
-				sequnce.unshift( done(this.query) );
+				tokens[ i ] = done( this.query );
 			}
 
-			return this._compile( expr, sequnce );
+			if ( tokens.length === 1 ) {
+				return this._compile( expr, tokens[0] );
+			}
+
+			return this._compile(expr, function( context, xml ) {
+				var len = i = tokens.length, results = [];
+
+				while ( i-- ) {
+					// TODO: performance test required for concat and push
+					results = results.concat( tokens[i](context, xml) );
+					//push_native.apply( results, sequnce[i](context) );
+				}
+
+				//results = uniqueSort( results, sortOrder );
+				return results;
+			});
 		},
 		build: function( token ) {
 			( diruns = 0, token = this.compute( token ) );
@@ -1101,22 +1115,7 @@ queryEngine = function() {
 
 		// query api
 		query = function( expr, context, seed ) {
-			var sequnce = compilers[ x ].compile( expr ),
-				sortOrder = has.sortOrder,
-				i = sequnce.length,
-				results = [];
-
-			if ( i === 1 ) {
-				results = sequnce[0]( context, !!x );
-			} else {
-				while ( i-- ) {
-					//results = results.concat( sequnce[i](context) );
-					push_native.apply( results, sequnce[i](context) );
-				}
-
-				//results = uniqueSort( results, sortOrder );
-			}
-
+			var results = compilers[ x ].compile( expr )( context, !!x );
 			query.verocache += 1;
 			return seed ? query.matchHas( seed, results ) : results;
 		};
