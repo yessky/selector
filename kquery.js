@@ -62,7 +62,7 @@ try {
 		document.childNodes
 	);
 } catch ( e ) {
-	push = { apply: tarray.length ?
+	push = {apply: tarray.length ?
 		function( target, sender ) {
 			push_native.apply( target, slice.call(sender) );
 		} :
@@ -691,9 +691,7 @@ queryEngine = function() {
 				var len = i = tokens.length, results = [];
 
 				while ( i-- ) {
-					// TODO: performance test required for concat and push
-					results = results.concat( tokens[i](context, xml) );
-					//push_native.apply( results, sequnce[i](context) );
+					push_native.apply( results, tokens[i](context, xml) );
 				}
 
 				//results = uniqueSort( results, sortOrder );
@@ -832,6 +830,11 @@ queryEngine = function() {
 			}
 
 			switch( type ) {
+				case 'T':
+					if (this.isXML) {
+						singleq.E = 1;
+					}
+					break;
 				case '.':
 					var len = singleq.length,
 						strcode = [];
@@ -915,7 +918,7 @@ queryEngine = function() {
 				vdoc: strvdoc,
 				vlink: '/*^var tag_a=xml?"a":"A";^*/',
 				main: 'function(root, xml){var result=[];'
-					+ 'var done=query.veroset,t,l=result.length;'
+					+ 'var done=query.veroset,t,r,l=result.length;'
 					+ 'BQ:{${X}}query.veroset=done;return result;}',
 				left: 'var ${R}V={_:false};NP_${R}:{P_${R}:{${X}break NP_${R};}'
 					+ '${R}V._=true;${Y}}',
@@ -1010,7 +1013,8 @@ queryEngine = function() {
 
 		mixin(vars, {filter: {
 			'T': '/*^var ${N}t=xml?"${0}":("${0}").toUpperCase();^*/'
-				+ '${N}.nodeName===${N}t',
+				+ (x ? '((r=${N}.nodeName)&&(t=r.indexOf(":"))>0&&'
+				+ 'r.substr(t+1)||r)' : '${N}.nodeName') + '===${N}t',
 			'#': '${N}.getAttribute("id")==="${0}"',
 			'N': '${N}.getAttribute("name")==="${0}"',
 			'[': has.hasAttribute ?
