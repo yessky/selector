@@ -830,11 +830,6 @@ queryEngine = function() {
 			}
 
 			switch( type ) {
-				case 'T':
-					if (this.isXML) {
-						singleq.E = 1;
-					}
-					break;
 				case '.':
 					var len = singleq.length,
 						strcode = [];
