@@ -3,7 +3,7 @@
  * Copyright (C) 2011 - 2013 aaron.xiao
  * Author: aaron.xiao <admin@veryos.com>
  * Version: 2.0
- * Release: 2013/03/31
+ * Release: 2013/05/04
  * License: http://kquery.veryos.com/MIT-LICENSE
  * Credits: 
  * Q.js - https://github.com/hackwaly/Q
@@ -45,16 +45,42 @@ var document = window.document,
 		+ whitespace + "+$", "g" ),
 	rescape = /'|\\/g,
 	rattributeQuotes = /\=[\x20\t\r\n\f]*([^'"\]]*)[\x20\t\r\n\f]*\]/g,
+	rvalidator = /\(.+?\)|\[.+?\]/g,
 
 	tarray = [],
 	push = tarray.push,
 	slice = tarray.slice,
 	push_native = tarray.push,
 
-	strundefined = typeof undefined,
+	strundef = typeof undefined,
+	strnthchild = 'if ( b === 0 ) { if ( a === 0 ) { return false; }' +
+		'if ( a === 1 ) { return true; } }' +
+		'var p = node.parentNode, count = 0, pos, tag, t, c;' +
+		'if ( p && (p._kqcache !== cache || !node._kqindex) ) {' +
+		'${0} for ( t = p.${1}; t; t = t.${2} ) {' +
+		'${3} } p._kqcache = cache; p._kqcount = count; }' +
+		'pos = revs ? p._kqcount - node._kqindex + 1 : node._kqindex;' +
+		'return a ? (pos - b) % a === 0 : pos === b;',
+	strnthpos = 'var tag = node.nodeName; while ( node = node.${0} ) {' +
+		'if ( node.nodeName === tag ) { return false; } } return true;',
+
 	hasDuplicate = false,
-	queryHas,
-	queryEngine;
+	kqid = 'kqset-' + now(),
+	kqset = 1,
+	contexts = {},
+	setContext,
+	tokenize,
+	compile,
+	query,
+
+	byId,
+	isNthChild,
+	isTypeNthChild,
+	isTypeFirst,
+	isTypeLast,
+	contains,
+	sortOrders,
+	getText;
 
 try {
 	push.apply(
@@ -74,321 +100,774 @@ try {
 	};
 }
 
-function mixin(accepter, sender) {
-	var key;
-	for ( key in sender ) { accepter[key] = sender[key]; }
-	return accepter;
-}
-
-function isXML( node, numeric ) {
-	var r = node && (node.ownerDocument || node).documentElement,
-		x = r ? r.nodeName !== 'HTML' : false;
-	return numeric ? Number( x ) : x;
-}
-
-// === key-value cache ===
-function queryCache( len ) {
-	var keys = [], cache;
+function createCache( len ) {
+	var keys = [], un = typeof len !== strundef, cache;
 
 	return (cache = function( key, value ) {
-		if ( keys.push( key += " " ) > len ) {
+		if ( ( key += ' ' ) && un && keys.push( key ) > len ) {
 			delete cache[ keys.shift() ];
 		}
 		return ( cache[ key ] = value );
 	});
 }
 
-// === Features/Bugs detection for HTML/XML Document ===
-queryHas = function( cur ) {
-	var sid = 'x-' + ( new Date().getTime() ),
-		data = '<html></html>',
-		xdoc = isXML( cur ),
-		has = [{}, {}], doc;
+function isXML( node ) {
+	var r = node && (node.ownerDocument || node).documentElement;
+	return r ? r.nodeName !== 'HTML' : false;
+}
 
-	// init a html document
-	if ( xdoc ) {
-		if ( cur.implementation ) {
-			doc = cur.implementation.createHTMLDocument( '#' );
+function isNative( fn ) {
+	return ( fn + '' ).indexOf( '[native code]' ) !== -1;
+}
+
+function format( template, props ) {
+	return template.replace(/\$\{([^\}]+)\}/g, function(m, p) {
+		 return typeof props[p] === strundef ? m : props[p] + '';
+	});
+}
+
+function make( type, array ) {
+	return ( array._type = type, array );
+}
+
+function order( a, b ) {
+	return a._tr - b._tr;
+}
+
+function now() {
+	return new Date().getTime();
+}
+
+function toFunc( args, fn, subs ) {
+	return new Function( args, format(fn, subs) );
+}
+
+function uniqueSort( results, sortOrder ) {
+	var dups = [], k = 0, i = 0, elem;
+
+	sortOrder && results.sort( sortOrder );
+
+	if ( hasDuplicate ) {
+		while ( (elem = results[i++]) ) {
+			if ( elem === results[ i ] ) {
+				k = dups.push( i );
+			}
+		}
+		while ( k-- ) {
+			results.splice( dups[ k ], 1 );
+		}
+		hasDuplicate = false;
+	}
+
+	return results;
+}
+
+function siblingCheck( a, b ) {
+	if ( a === b ) {
+		return 0;
+	}
+
+	var cur = a.nextSibling;
+
+	while ( cur ) {
+		if ( cur === b ) { return -1; }
+		cur = cur.nextSibling;
+	}
+
+	return 1;
+}
+
+// === Features/Bugs detection and Template variables of complier ===
+setContext = function( doc ) {
+	var kid = doc._kqset;
+
+	if ( kid ) { return contexts[ kid ]; }
+
+	var root = doc.documentElement, ks = kqset++,
+		byid = isNative( doc.getElementById ),
+		walkChildren = ('children' in root),
+		walkElement = Number( 'firstElementChild' in root ),
+		compos = Number( isNative(root.compareDocumentPosition) ),
+		qsa = isNative( doc.querySelectorAll ),
+		attr = isNative( root.hasAttribute ),
+		context = {}, has, vars, xdoc, buggyById;
+
+	doc._kqset = context.id = ks;
+	xdoc = context.isXML = isXML( doc );
+	context.selectors = {};
+
+	// Features/Bugs detection
+	has = context.has = {
+		qsa: qsa,
+		attr: attr,
+		compos: compos,
+		text: ('textContent' in root),
+		byId: byid,
+		byElement: walkElement,
+		byChildren: walkChildren,
+		byChildrenTag: walkChildren && ('tags' in root.children)
+	};
+
+	(function() {
+		var div = doc.createElement('div'), node;
+
+		// NOTE: Windows 8 Native Apps
+		// The type attribute is restricted during .innerHTML assignment
+
+		div.innerHTML = '<!-- # --><i class="hidden e"></i><i class="hidden"></i>';
+		// Opera can't find the second classname (in 9.6)
+		// getElementsByClassName does not work on XML document
+		if ( !div.getElementsByClassName ||
+			div.getElementsByClassName('e').length === 0 ) {
+			has.byClass = false;
 		} else {
-			var acxo = new ActiveXObject( 'htmlfile' );
-
-			acxo.open();
-			acxo.write( '<html><head></title></title></head><body>' );
-			acxo.write( '<iframe src="about:blank" id="win"></iframe>' );
-			acxo.write( '</body></html>' );
-			acxo.close();
-
-			doc = acxo.getElementById( 'win' ).contentWindow.document;
-		}
-	}
-	// init a xml document
-	else {
-		if ( window.DOMParser ) {
-			doc = new DOMParser().parseFromString( data , "text/xml" );
-		} else {
-			doc = new ActiveXObject( "Microsoft.XMLDOM" );
-			doc.async = "false";
-			doc.loadXML( data );
-		}
-	}
-
-	function isNative( fn ) {
-		return ( fn + '' ).indexOf( '[native code]' ) !== -1;
-	}
-
-	function assert( doc, fn ) {
-		var div = doc.createElement("div");
-
-		try {
-			return fn( div );
-		} catch ( e ) {
-			return false;
-		} finally {
-			div = null;
-		}
-	}
-
-	function siblingCheck( a, b ) {
-		if ( a === b ) {
-			return ret;
+			// Safari caches class attributes, doesn't catch changes (in 3.2)
+			div.lastChild.className = "e";
+			has.byClass = div.getElementsByClassName('e').length === 2;
 		}
 
-		var cur = a.nextSibling;
+		// IE will return comment node
+		has.byTagWithComment = div.getElementsByTagName('*').length > 3;
 
-		while ( cur ) {
-			if ( cur === b ) {
-				return -1;
+		// TODO: this check is necessary ?
+		/*div.innerHTML = '<a name="' + kqid + '"></a><div id="' + kqid + '">';
+		node = div.getElementsByTagName('*')[kqid];
+		// IE returns HTMLCollection in html document.
+		if ( node && node.length > 1) {
+			has.buggyByTagId = true;
+			node = node[1];
+		}
+		has.byTagId = node === div.lastChild;*/
+
+		// Support: Windows 8 Native Apps
+		// Assigning innerHTML with "name" attributes throws uncatchable exceptions
+		// http://msdn.microsoft.com/en-us/library/ie/hh465388.aspx
+		div = doc.createElement('div');
+		div.appendChild( doc.createElement('a') ).setAttribute( 'name', kqid );
+		div.appendChild( doc.createElement('i') ).setAttribute( 'name', kqid );
+		root.appendChild( div ).setAttribute( 'id', kqid + 0 );
+
+		has.byName = doc.getElementsByName &&
+			doc.getElementsByName( kqid ).length === 2 +
+			doc.getElementsByName( kqid + 0 ).length;
+		buggyById = has.buggyById = byid && !!doc.getElementById( kqid );
+		root.removeChild( div );
+
+		if ( qsa ) {
+			var rbuggyQSA = [], input, matches;
+
+			div.innerHTML = '<i class="c" id="d"></i><select><option selected=""></option></select>';
+			// IE9/10 - querySelectorAll not with ID/CLASS selector under XML Document
+			if ( !div.querySelectorAll('.c').length ) {
+				rbuggyQSA.push( '\\.' + encoding );
 			}
-
-			cur = cur.nextSibling;
-		}
-
-		return 1;
-	}
-
-	function initDocument( doc, x ) {
-		var byid = 'getElementById' in doc,
-			root = doc.documentElement,
-			support = has[ x ];
-
-		function createNode( wrapper, prop ) {
-			var node = doc.createElement( prop.name ),
-				attrs = prop.attrs, key;
-
-			for ( key in attrs ) { node.setAttribute( key, attrs[key] ); }
-			wrapper.appendChild( node );
-		}
-
-		// Features detection
-		mixin(support, {
-			qsa: isNative( doc.querySelectorAll ),
-			docPos: 'compareDocumentPosition' in root,
-			textContent: 'textContent' in root,
-			hasAttribute: isNative( root.hasAttribute ),
-			byId: byid,
-			byElement: 'firstElementChild' in root,
-			byChildren: 'children' in root,
-			byChildrenTag: ('children' in root) && ('tags' in root.children),
-			byClass: assert(doc, function( div ) {
-				createNode( div, {name: 'div', attrs: {'class': 'hidden e'}} );
-				createNode( div, {name: 'div', attrs: {'class': 'hidden'}} );
-				// Opera can't find the second classname (in 9.6)
-				if ( !div.getElementsByClassName ||
-					div.getElementsByClassName('e').length === 0 ) {
-					return false;
+			if ( !div.querySelectorAll('#d').length ) {
+				rbuggyQSA.push( '#' + encoding );
+			}
+			// IE8 - Some boolean attributes are not treated correctly
+			if ( !div.querySelectorAll('[selected]').length ) {
+				rbuggyQSA.push( '\\[' + whitespace + '*checked|disabled|ismap|multiple|readonly|selected|value' + whitespace + '*(?:[*^$|!~\]])' );
+			}
+			// :checked should return selected option elements
+			// IE8 throws exceptions for some dynamic pseudos
+			try {
+				if ( !div.querySelectorAll(':checked').length ) {
+					rbuggyQSA.push(':checked');
 				}
-				// Safari caches class attributes, doesn't catch changes (in 3.2)
-				div.lastChild.setAttribute( 'class', 'e' );
-				return div.getElementsByClassName('e').length !== 1;
-			}),
-			byTagId: assert(doc, function( div ) {
-				createNode( div, {name: 'a', attrs: {'name': sid}} );
-				createNode( div, {name: 'div', attrs: {'id': sid}} );
-				var node = div.getElementsByTagName('*')[sid],
-					pass = false;
-				// IE returns HTMLCollection in html document.
-				if ( node && node.length > 1) {
-					pass = true;
-					node = node[1];
-				}
+			} catch ( e ) {}
 
-				support.buggyByTagId = pass;
-				return node === div.lastChild;
-			}),
-			byTagWithComment: assert(doc, function( div ) {
-				div.appendChild( doc.createComment('') );
-				return div.getElementsByTagName('*').length !== 0;
-			}),
-			byName: assert(doc, function( div ) {
-				div.setAttribute( 'id', sid + 0 );
-				createNode( div, {name: 'a', attrs: {'name': sid}} );
-				createNode( div, {name: 'div', attrs: {'name': sid}} );
-				root.insertBefore( div, root.firstChild );
+			// Support: Opera 10-12/IE8
+			// ^= $= *= and empty values
+			// Should not select anything
+			input = doc.createElement( 'input' );
+			input.setAttribute( 'type', 'hidden' );
+			div.appendChild( input ).setAttribute( 'i', '' );
 
-				var pass = 'getElementsByName' in doc &&
-					// buggy browsers will return fewer than the correct 2
-					doc.getElementsByName( sid ).length === 2 +
-					// buggy browsers will return more than the correct 0
-					doc.getElementsByName( sid + 0 ).length;
-
-				support.buggyById = byid && !!doc.getElementById( sid );
-				root.removeChild( div );
-				return pass;
-			})
-		});
-
-		support.contains = support.docPos ? function( a, b ) {
-			return !!(a.compareDocumentPosition(b) & 16);
-		} : root.contains ? function( a, b ) {
-		    return a !== b && (a.contains ? a.contains(b) : true);
-		} : function( a, b ) {
-			while ( (b = b.parentNode) ) {
-				if ( a === b ) { return true; }
-			}
-			return false;
-		};
-
-		support.sortOrder = support.docPos ? function( a, b ) {
-			if ( a === b ) {
-				hasDuplicate = true;
-				return 0;
-			}
-
-			return ( !a.compareDocumentPosition || !b.compareDocumentPosition ?
-				a.compareDocumentPosition :
-				a.compareDocumentPosition(b) & 4
-			) ? -1 : 1;
-		} : ( 'sourceIndex' in root ) ? function( a, b ) {
-			return a.sourceIndex - b.sourceIndex > 0 ? 1 : -1;
-		} : function( a, b ) {
-			if ( a === b ) {
-				hasDuplicate = true;
-				return 0;
-			}
-
-			var al, bl, i,
-				ap = [],
-				bp = [],
-				aup = a.parentNode,
-				bup = b.parentNode,
-				cur = aup;
-
-			if ( aup === bup ) { return siblingCheck( a, b ); }
-
-			// Otherwise they're somewhere else in the tree so we need
-			// to build up a full list of the parentNodes for comparison
-			while ( cur ) {
-				ap.unshift( cur );
-				cur = cur.parentNode;
-			}
-
-			cur = bup;
-
-			while ( cur ) {
-				bp.unshift( cur );
-				cur = cur.parentNode;
-			}
-
-			al = ap.length;
-			bl = bp.length;
-
-			// Start walking down the tree looking for a discrepancy
-			for ( i = 0; i < al && i < bl; i++ ) {
-				if ( ap[i] !== bp[i] ) {
-					return siblingCheck( ap[i], bp[i] );
-				}
-			}
-		};
-
-		if ( !x && support.qsa ) {
-			var rbuggyQSA = [ ':focus' ], rbuggyMatches = [];
-
-			assert(doc, function( div ) {
-				// Select is set to empty string on purpose
-				// This is to test IE's treatment of not explictly
-				// setting a boolean content attribute,
-				// since its presence should be enough
-				div.innerHTML = "<select><option selected=''></option></select>";
-
-				// IE8 - Some boolean attributes are not treated correctly
-				if ( !div.querySelectorAll("[selected]").length ) {
-					rbuggyQSA.push( "\\[" + whitespace + "*(?:checked|disabled|ismap|multiple|readonly|selected|value)" );
-				}
-
-				// Webkit/Opera - :checked should return selected option elements
-				// http://www.w3.org/TR/2011/REC-css3-selectors-20110929/#checked
-				// IE8 throws error here and will not see later tests
-				if ( !div.querySelectorAll(":checked").length ) {
-					rbuggyQSA.push(":checked");
-				}
-			});
-
-			assert(doc, function( div ) {
-				// Support: Opera 10-12/IE8
-				// ^= $= *= and empty values
-				// Should not select anything
-				// Support: Windows 8 Native Apps
-				// The type attribute is restricted during .innerHTML assignment
-				var input = document.createElement("input");
-				input.setAttribute("type", "hidden");
-				div.appendChild( input ).setAttribute( "i", "" );
-
-				if ( div.querySelectorAll("[i^='']").length ) {
-					rbuggyQSA.push( "[*^$]=" + whitespace + "*(?:\"\"|'')" );
+			try {
+				if ( div.querySelectorAll('[i^=""]').length ) {
+					rbuggyQSA.push( '[*^$]=' + whitespace + '*(?:""|\'\')' );
 				}
 
 				// FF 3.5 - :enabled/:disabled and hidden elements (hidden elements are still enabled)
-				// IE8 throws error here and will not see later tests
-				if ( !div.querySelectorAll(":enabled").length ) {
-					rbuggyQSA.push( ":enabled", ":disabled" );
+				// IE8 throws error here, later test will be ignore
+				if ( !div.querySelectorAll(':enabled').length ) {
+					rbuggyQSA.push( ':enabled', ':disabled' );
 				}
 
 				// Opera 10-11 does not throw on post-comma invalid pseudos
-				div.querySelectorAll("*,:x");
-				rbuggyQSA.push(",.*:");
-			});
+				div.querySelectorAll( '*,:x' );
+				rbuggyQSA.push( ',.*:' );
+			} catch (e) {}
 
 			if ( isNative( (matches = root.webkitMatchesSelector ||
 				root.mozMatchesSelector ||
 				root.oMatchesSelector ||
 				root.msMatchesSelector) ) ) {
 
-				support.matches = matches;
-				assert(doc, function( div ) {
-					// Check to see if it's possible to do matchesSelector
-					// on a disconnected node (IE 9)
-					support.disconnectedMatch = matches.call( div, "div" );
-
-					// This should fail with an exception
-					// Gecko does not error, returns false instead
-					matches.call( div, "[s!='']:x" );
-					rbuggyMatches.push( "!=", pseudos );
-				});
+				context.matches = matches;
+				// Check to see if it's possible to do matchesSelector
+				// on a disconnected node (IE 9)
+				has.disconnectedMatch = matches.call( doc.createElement('div'), 'div' );
 			}
 
-			mixin(support, {
-				rqsaBugs: new RegExp( rbuggyQSA.join("|") ),
-				rmatchBugs: rbuggyMatches.length && new RegExp( rbuggyMatches.join("|") )
-			});
+			context.rqsaBugs = rbuggyQSA.length && new RegExp( rbuggyQSA.join('|') );
+		}
+
+		div = node = null;
+	})();
+
+	// Teamplate variables for complier
+	var refinders = {'#': 10, '>T': 8, 'N': 7, '.': 6},
+		strecontains = compos ?
+			'${0}.compareDocumentPosition(${1})&16' : '${0}.contains(${1})',
+		strehash = '${N}.kqset||(${N}.kqset=++done)',
+		streuniquemain = 'if(t=${N}h[' + strehash + ']){if(t._){break P_${R};}' +
+			'else{break NP_${R};}}${N}h[' + strehash + ']=${R}V;${X}',
+		stretest = format( streuniquemain, {X: 'if(${N}!==${R}){${X}}'} ),
+		streloopmain = 'for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
+		streinputs = 'var ${N}a=' +
+			'query("input,select,textarea,option",doc,null,doc,context);' +
+			'for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){',
+		streelem = has.byTagWithComment ? 'if(${N}.nodeType===1){${X}}' : '${X}',
+		stretags = 'var ${N}a=${R}.getElementsByTagName("*");' + format( streloopmain, {X: streelem} ),
+		strelink = 'var ${N}a=${R}.getElementsByTagName("a");' + streloopmain,
+		streattr = '(t=${A})&&t.indexOf("${1}")',
+		strecache = '/*^var rev=query.kqcache;^*/',
+		strechild = '/*^var isNthChild=context.isNthChild;^*/',
+		stretype = '/*^var isTypeNthChild=context.isTypeNthChild;^*/';
+
+	// Priority of seed selector
+	context.finders = {
+		':root': 10, '+': 10,
+		'#': byid ? refinders['#'] : 0,
+		'>T': has.byChildrenTag ? refinders['>T'] : 0,
+		'N': has.byName ? refinders['N'] : 0,
+		'.': has.byClass ? refinders['.'] : 0,
+		'>': 6, '~': 6, 'T': 5,
+		':checked': 4, ':enabled': 4, ':disabled': 4,
+		':link': 3, ':visited': 3, '*': 0
+	};
+
+	vars = context.vars = {
+		main: 'function(root, doc, context){var result=[],' +
+			'xml=context.isXML,done=query.kqset,l=0,t,r;' +
+			'BQ:{${X}}query.kqset=done;return result;}',
+		left: 'var ${R}V={_:false};NP_${R}:{P_${R}:{${X}break NP_${R};}${R}V._=true;${Y}}',
+		strip: '/*^var ${N}l;^*/if(!${N}l||!(' +
+			format( strecontains, ['${N}l', '${N}'] ) +')){${X}${N}l=${N};}',
+		unique: '/*^var ${N}h={};^*/if(${N}h[' + strehash + '])break;' +
+			'${N}h[' + strehash + ']=1;${X}',
+		loopbreak: 'break P_${R};',
+		push: 'result[l++]=${N};',
+		link: '/*^var tag_a=xml?"a":"A";^*/'
+	};
+
+	// Combination filter
+	vars.comb = {
+		'>': '/*^var ${N}h={};^*/var ${N}=${C}.parentNode;' + stretest,
+		' ': '/*^var ${N}h={};^*/var ${N}=${C};' +
+			'while(${N}=${N}.parentNode){' + stretest + '}',
+		'+': walkElement ?
+			'/*^var ${N}h={};var ${N};^*/if(${N}=${C}.previousElementSibling){${X}}' :
+			'/*^var ${N}h={};^*/var ${N}=${C};' +
+			'while(${N}=${N}.previousSibling){if(${N}.nodeType===1){${X}break;}}',
+		'~': walkElement ?
+			'/*^var ${N}h={};^*/var ${N}=${C};' +
+			'while(${N}=${N}.previousElementSibling){' + streuniquemain + '}' :
+			'/*^var ${N}h={};^*/var ${N}=${C};while(${N}=${N}.previousSibling)' +
+			'{if(${N}.nodeType===1){' + streuniquemain + '}}'
+	};
+
+	// Seed selectors
+	vars.find = {
+		'#': 'var ${N}=context.byId("${P}",${R},doc);if(${N}){${X}}',
+		'N': '/*^var isdoc=${R}===doc;^*/var ${N}a=doc.getElementsByName("${P}");' +
+			'for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){if(isdoc||' +
+			format( strecontains, ['${R}', '${N}'] ) + '){${X}}}',
+		'T': 'var ${N}a=${R}.getElementsByTagName("${P}");' + streloopmain,
+		'.': 'var ${N}a=${R}.getElementsByClassName("${P}");' + streloopmain,
+		'*': stretags,
+		'[': stretags,
+		'+': walkElement ?
+			'/*^var ${N};^*/if(${N}=${R}.nextElementSibling){${X}}' :
+			'var ${N}=${R};while(${N}=${N}.nextSibling){if(${N}.nodeType===1){${X}break;}}',
+		'~': walkElement ?
+			'/*^var ${N}h={};^*/var ${N}=${R};while(${N}=${N}.nextElementSibling){' +
+			'if(${N}h[' + strehash + '])break;${N}h[' + strehash + ']=1;${X}}' :
+			'/*^var ${N}h={};^*/var ${N}=${R};while(${N}=${N}.nextSibling){' +
+			'if(${N}.nodeType===1){if(${N}h[' + strehash + '])break;' +
+			'${N}h[' + strehash + ']=1;${X}}}',
+		'>': walkChildren ? 
+			'var ${N}a=${R}.children;' + streloopmain :
+			'var ${N}a=${R}.childNodes;' + format( streloopmain, {X: 'if(${N}.nodeType===1){${X}}'}),
+		'>T': 'var ${N}a=${R}.children.tags("${P}");' + streloopmain,
+		':root': 'var ${N}a=[doc.documentElement];' + streloopmain,
+		':link': strelink,
+		':visited': strelink,
+		':checked': 'var ${N}a=${R}.getElementsByTagName("input");' + streloopmain,
+		':enabled': streinputs + 'if(${N}.disabled===false){${X}}}',
+		':disabled': streinputs + 'if(${N}.disabled===true){${X}}}'
+	};
+
+	// Check ancestor/sibling
+	vars.cond = {
+		'>': 'if(${N}.parentNode===root){${X}}',
+		'+': walkElement ?
+			'if(${N}.previousElementSibling===root){${X}}' :
+			'var ${N}=${C};while(${N}=${N}.previousSibling){' +
+			'if(${N}.nodeType===1){break}}if(${N}===root){${X}}',
+		'~': walkElement ?
+			'if(root.compareDocumentPosition(${N})&4){${X}}' :
+			'if((root!=${N}&&root.contains(${N})&&16 )+' +
+			'(root!=${N}&&${N}.contains(root)&&8)+(root.nodeType===1?' +
+			'(root.sourceIndex<${N}.sourceIndex&&4)+(' +
+			'root.sourceIndex>${N}.sourceIndex&&2):1)&4){${X}}'
+	};
+
+	// Condition filters
+	vars.filter = {
+		'T': '/*^var ${N}t=xml?"${0}":("${0}").toUpperCase();^*/' +
+			(xdoc ? '((r=${N}.nodeName)&&(t=r.indexOf(":"))>0&&' +
+			'r.substr(t+1)||r)' : '${N}.nodeName') + '===${N}t',
+		'#': '${N}.getAttribute("id")==="${0}"',
+		'N': '${N}.getAttribute("name")==="${0}"',
+		'[': attr ?
+			'${N}.hasAttribute("${0}")' : '(t=${N}.getAttributeNode("${0}"))&&(t.specified)',
+		'=': '${A}==="${1}"',
+		'!=': '${A}!=="${1}"',
+		'^=': streattr + '===0',
+		'$=': streattr + '===(t.length - "${1}".length)',
+		'*=': streattr + '!==-1',
+		'|=': '(t=${A})&&t.indexOf("-${1}-")!==-1',
+		'~=': '(t=${A})&&(" "+t+" ").indexOf("${1}")!==-1',
+		'*': '',
+
+		':nth-child': strecache + strechild + 'isNthChild(${N},${1},${2},rev)',
+		':nth-last-child': strecache + strechild + 'isNthChild(${N},${1},${2},rev,1)',
+		':nth-of-type': strecache + stretype + 'isTypeNthChild(${N},${1},${2},rev)',
+		':nth-last-of-type':strecache + stretype + 'isTypeNthChild(${N},${1},${2},rev,1)',
+		':first-child': walkElement ?
+			'!${N}.previousElementSibling' :
+			'/*^var isFirstChild=query.isFirstChild;^*/isFirstChild(${N})',
+		':last-child': walkElement ?
+			'!${N}.nextElementSibling' :
+			'/*^var isLastChild=query.isLastChild;^*/isLastChild(${N})',
+		':only-child': walkElement ?
+			'!${N}.previousElementSibling&&!${N}.nextElementSibling' :
+			'/*^var isOnlyChild=query.isOnlyChild;^*/isOnlyChild(${N})',
+		':first-of-type': '/*^var isTypeFirst=context.isTypeFirst;^*/isTypeFirst(${N})',
+		':last-of-type': '/*^var isTypeLast=context.isTypeLast;^*/isTypeLast(${N})',
+		':only-of-type': '/*^var isTypeOnly=context.isTypeOnly;^*/isTypeOnly(${N})',
+
+		':root': '${N}===doc.documentElement',
+		':empty': '!${N}.firstChild',
+		':lang': '${N}.lang==="${0}"',
+
+		// FIXME: investigation :visited
+		':link': vars.link + '${N}.nodeName===tag_a',
+		':visited': 'false',
+		':hover': '${N}===doc.hoverElement',
+
+		':active': '${N}===doc.activeElement',
+		':focus': '${N}===doc.activeElement&&(!doc.hasFocus||' +
+			'doc.hasFocus())&&!!(${N}.type||${N}.href)',
+		':target': '${N}.id&&doc.location.hash.slice(1)===${N}.id',
+
+		':enabled': '${N}.disabled===false',
+		':disabled': '${N}.disabled===true',
+		':checked': '${N}.checked===true',
+
+		// Does not match an element
+		'::first-line': 'false',
+		'::first-letter': 'false',
+		'::before': 'false',
+		'::after': 'false',
+		// Dynamically generate while compiling
+		':not': '',
+
+		// Extended pseudos selectors
+		':element': '${N}.nodeType===1',
+		// For support selector ':contains(text)'
+		':contains': (has.text ? '${N}.textContent' :
+			(xdoc ? '/*^var getText=query.getText;^*/getText(${N})' : '${N}.innerText')) +
+			'.indexOf("${0}")>-1',
+		':not-ex': '/*^var _${G}=query.hashSet(query("${1}",doc,null,doc,context));' +
+			'done=query.kqset;^*/!_${G}[' + strehash + ']',
+		':has': '(t=query("${1}",${N},null,doc,context),done=query.kqset,t.length>0)'
+	};
+
+	context.contains = contains[ compos ? 0 : (root.contains ? 1 : 2) ];
+	context.sortOrder = sortOrders[ compos ? 0 : (('sourceIndex' in root) ? 1 : 2) ];
+
+	context.byId = byId[ byid ? (buggyById ? 0 : 1) : 2 ];
+	// :nth-child(xxxx) :ntn-last-child(xxx)
+	context.isNthChild = isNthChild[ walkElement ];
+	// :nth-of-type(xxx) :nth-last-of-type(xxx)
+	context.isTypeNthChild = isTypeNthChild[ walkElement ];
+	// :first-of-type
+	context.isTypeFirst = isTypeFirst[ walkElement ];
+	// :last-of-type
+	context.isTypeLast = isTypeLast[ walkElement ];
+	// :only-of-type
+	context.isTypeOnly = function( node ) {
+		return context.isTypeLast( node ) && context.isTypeFirst( node );
+	};
+
+	return ( contexts[ ks ] = context );
+};
+
+tokenize = function() {
+	var text, index;
+
+	function error() {
+		return kquery.error( [text,  "character: " + index].join(', ') );
+	}
+
+	function match( regex ) {
+		var mc = ( regex.lastIndex = index, regex.exec(text) );
+		return mc && mc.index == index ? (index = regex.lastIndex, mc) : null;
+	}
+
+	function parse() {
+		var m, q = [], c = [q], g = [c], x;
+
+		while ( (m = match(rmatches)) !== null ) {
+			// [ ~+>,] group or combination selector
+			if ( m[8] ) {
+				// Selector starts with ','
+				if ( m[8] === "," ) {
+					if ( c.length === 1 && q.length === 0 ) { break; }
+					g.push( c = [ q = [] ] );
+				}
+				// Invalid combination  div + + div
+				else {
+					if ( q.length === 0 && q._union ) { break; }
+					c.length === 1 && q.length && ( q._union = q._union || " " );
+					(c.length > 1 || c.length === 1 && q.length) && c.push( q = [] );
+					q._union = m[8].replace( rwhitespace, " " );
+				}
+			}
+			// Attribute selector [attr='xxx']
+			else if ( m[1] ) {
+				// [attr='xxx']
+				if ( m[2] && typeof( m[4] ) !== strundef ) {
+					q.push( make(m[2], [m[1], m[4]]) );
+				}
+				// [attr]
+				else {
+					q.push( make("[", [m[1]]) );
+				}
+			}
+			// .class #ID :pseduo
+			else if ( m[6] ) {
+				if ( m[5] ) {
+					// .class | #id
+					if ( m[5].indexOf(":") === -1 ) {
+						q.push( make(m[5], [m[6]]) );
+					}
+					// [:|::]pseduo
+					else {
+						x = m[5] + m[6];
+
+						if ( m[7] ) {
+							if ( x === ':not' || x === ':has' ) {
+								var xi = index, xt = text;
+
+								text = text.slice( xi - m[7].length - 1, xi - 1 );
+								q.push( make(x, [(index = 0, parse()), text]) );
+								( index = xi, text = xt );
+							} else {
+								q.push( make(x, [ m[7] ]) );
+							}
+						} else {
+							q.push( make(x, m[5] === '::' ? [x] : [m[6]]) );
+						}
+					}
+				} else {
+					q.push( make("T", [m[6]]) );
+				}
+			}
+		}
+
+		return g;
+	}
+
+	return function( expr ) {
+		// Speed test in 1000 times run.
+		// IE: cache->13ms uncache->17-19ms
+		// chrome: cache->8ms uncache->10ms
+		var tkns = tokenize.cache( expr );
+
+		if ( !tkns ) {
+			text = expr;
+			index = 0;
+			expr = parse();
+			match( /\s*/g );
+
+			if ( index < text.length ) {
+				error();
+			}
+
+			tkns = tokenize.cache( text, expr );
+		}
+
+		return tkns;
+	};
+}();
+
+tokenize.store = createCache();
+tokenize.cache = function( expr, value ) {
+	value = value ? this.store( expr, value ) : this.store[ expr + ' ' ];
+	return value ? this.clone( value ) : value;
+};
+tokenize.clone = function( src ) {
+	var i = 0, deep = src[0] instanceof Array, g, q, c;
+
+	function cp( a, b ) {
+		if ( typeof b._type !== strundef ) {
+			a._type = b._type;
+		}
+		if ( typeof b._union !== strundef ) {
+			a._union = b._union;
 		}
 	}
 
-	initDocument( cur, xdoc ? 1 : 0 );
-	initDocument( doc, xdoc ? 0 : 1 );
+	if ( deep ) {
+		g = [];
+		for ( ; q = src[i]; i++ ) {
+			g.push( c = this.clone(q) );
+			cp( c, q );
+		}
+	} else {
+		g = src.slice(0);
+		cp( g, src );
+	}
 
-	return function( x ) { return has [ x ]; };
-}( document );
+	return g;
+};
 
-// === Query engine ===
-queryEngine = function() {
-	var diruns = 0,
-		envs = [ 0, 0 ],
-		queries = [ 0, 0 ],
-		compilers = [ 0, 0 ],
+query = function( expr, root, seed, doc, context ) {
+	var result = compile( expr, context )( root, doc, context );
+	query.kqcache += 1;
+	return seed ? query.matchSet( seed, result ) : result;
+};
 
-		// Priority defination
-		rfinders = {'#': 10, '>T': 8, 'N': 7, '.': 6},
-		vtesters = {
+query.kqcache = query.kqset = 1;
+
+query.hashSet = function( array ) {
+	var cached = array.kqhash, i, kq, it;
+
+	if ( !cached ) {
+		i = array.length;
+		kq = query.kqset;
+
+		cached = array.kqhash = {};
+		while ( i-- ) {
+			it = array[i];
+			cached[ it.kqset || (it.kqset = ++kq) ] = 1;
+		}
+		query.kqset = kq;
+	}
+
+	return cached;
+};
+
+function matchSet( seed, array ) {
+	var cached = query.hashSet( array ), result = [], i = 0, elem;
+
+	for ( ; node = seed[i]; i++ ) {
+		if ( cached[node.kqset || (node.kqset = ++query.kqset)] ) {
+			result.push( node );
+		}
+	}
+
+	return result;
+}
+
+contains = [
+	function( a, b ) {
+		return !!(a.compareDocumentPosition(b) & 16);
+	},
+	function( a, b ) {
+	    return a !== b && (a.contains ? a.contains(b) : true);
+	},
+	function( a, b ) {
+		while ( (b = b.parentNode) ) {
+			if ( a === b ) { return true; }
+		}
+		return false;
+	}
+];
+
+sortOrders = [
+	function( a, b ) {
+		if ( a === b ) {
+			hasDuplicate = true;
+			return 0;
+		}
+
+		return ( !a.compareDocumentPosition || !b.compareDocumentPosition ?
+			a.compareDocumentPosition :
+			a.compareDocumentPosition(b) & 4
+		) ? -1 : 1;
+	},
+	function( a, b ) {
+		return a.sourceIndex - b.sourceIndex > 0 ? 1 : -1;
+	},
+	function( a, b ) {
+		if ( a === b ) {
+			hasDuplicate = true;
+			return 0;
+		}
+
+		var al, bl, i,
+			ap = [],
+			bp = [],
+			aup = a.parentNode,
+			bup = b.parentNode,
+			cur = aup;
+
+		if ( aup === bup ) { return siblingCheck( a, b ); }
+
+		// Otherwise they're somewhere else in the tree so we need
+		// to build up a full list of the parentNodes for comparison
+		while ( cur ) {
+			ap.unshift( cur );
+			cur = cur.parentNode;
+		}
+
+		cur = bup;
+
+		while ( cur ) {
+			bp.unshift( cur );
+			cur = cur.parentNode;
+		}
+
+		al = ap.length;
+		bl = bp.length;
+
+		// Start walking down the tree looking for a discrepancy
+		for ( i = 0; i < al && i < bl; i++ ) {
+			if ( ap[i] !== bp[i] ) {
+				return siblingCheck( ap[i], bp[i] );
+			}
+		}
+	}
+];
+
+byId = [
+	function( id, node, doc ) {
+		var m = doc.getElementById( id );
+
+		return m && m.parentNode ?
+			( node.nodeType === 1 && context.contains(node, m) ) && m.id === id ||
+			typeof m.getAttributeNode !== strundef &&
+			m.getAttributeNode('id').value === id ?
+				m :
+				null :
+			null;
+	},
+	function( id, node, doc ) {
+		var m = doc.getElementById( id );
+		return m && m.parentNode ? m : null;
+	},
+	function( id, node, doc ) {
+		return node.getElementsByTagName('*')[ id ];
+	}
+];
+
+isNthChild = [
+	toFunc('node,a,b,cache,revs', strnthchild, [
+		'',
+		'firstChild',
+		'nextSibling',
+		'if ( t.nodeType === 1 ) { t._kqindex = ++count; }'
+	]),
+	toFunc('node,a,b,cache,revs', strnthchild, [
+		'',
+		'firstElementChild',
+		'nextElementSibling',
+		't._kqindex = ++count'
+	])
+];
+
+isTypeNthChild = [
+	toFunc('node,a,b,cache,revs', strnthchild, [
+		'tag = node.nodeName;',
+		'firstChild',
+		'nextSibling',
+		'if ( t.nodeName === tag ) { t._kqindex = ++count; }'
+	]),
+	toFunc('node,a,b,cache,revs', strnthchild, [
+		'tag = node.nodeName;',
+		'firstElementChild',
+		'nextElementSibling',
+		'if ( t.nodeName === tag ) { t._kqindex = ++count; }'
+	])
+];
+
+isTypeFirst = [
+	toFunc( 'node', strnthpos, ['previousSibling'] ),
+	toFunc( 'node', strnthpos, ['previousElementSibling'] )
+];
+
+isTypeLast = [
+	toFunc( 'node', strnthpos, ['nextSibling'] ),
+	toFunc( 'node', strnthpos, ['nextElementSibling'] )
+];
+
+// :first-child
+query.isFirstChild = function( node ) {
+	while ( node = node.previousSibling ) {
+        if ( node.nodeType === 1 ) { return 0;  }
+    }
+    return 1;
+};
+
+// :last-child
+query.isLastChild = function( node ) {
+	while ( node = node.nextSibling ) {
+        if ( node.nodeType === 1 ) { return 0;  }
+    }
+    return 1;
+};
+
+// :only-child
+query.isOnlyChild = function( node ) {
+	return query.isLastChild( node ) && query.isFirstChild( node );
+};
+
+query.getText = getText = function( node ) {
+	var ret = '', i = 0, nodeType = node.nodeType;
+
+	if ( nodeType === 3 || nodeType === 4 ) {
+		ret += node.nodeValue;
+	} else if ( nodeType === 1 || nodeType === 9 || nodeType === 11 ) {
+		for ( node = node.firstChild; node; node = node.nextSibling ) {
+			ret += getText( node );
+		}
+	}
+
+    return ret;
+};
+
+compile = function( expr, context ) {
+	var isXML = context.isXML,
+		isHTML = !isXML,
+		cid = context.id,
+		has = context.has,
+		pris = context.finders,
+		vars = context.vars,
+
+		mfind = vars.find, mcomb = vars.comb,
+		mfilter = vars.filter, mcond = vars.cond,
+
+		vstrip = vars.strip,
+		vbyTagID = has.byTagID,
+		vbyChildrenTag = has.byChildrenTag,
+		vpriChildren = pris['>T'],
+
+		retesters = {
 			'#': 9, '=': 9, 'N': 9,
 			'[': 8, 'T': 8, '.': 5,
 			'~=': 3, '|=': 3, '*=': 3,
@@ -396,969 +875,491 @@ queryEngine = function() {
 			':nth-child': 2, ':nth-last-child': 2,
 			':first-child': 3, ':last-child': 3, ':only-child': 3
 		},
-		vunique = {'#': 1, ':root': 1, '+': 1, '>': 1, '~': 1, '>T': 1},
-		vclass = {'class': 1, 'className': 1},
-		vprops = {'for': '${N}.htmlFor', 'class': '${N}.className'},
-		vuri = {
+		reuniques = {'#': 1, ':root': 1, '+': 1, '>': 1, '~': 1, '>T': 1},
+		reclass = {'class': 1, 'className': 1},
+		reprops = {'for': '${N}.htmlFor', 'class': '${N}.className'},
+		reuris = {
 			'action': 2, 'cite': 2, 'codebase': 2, 'data': 2, 'href': 2,
 			'longdesc': 2, 'lowsrc': 2, 'src': 2, 'usemap': 2
-		},
-
-		newFun = function( args, fn, prop ) {
-			return new Function( args, format(fn, prop) );
-		},
-		format = function( template, props ) {
-			return template.replace(/\$\{([^\}]+)\}/g, function(m, p) {
-				 return props[p] == null ? m : props[p] + '';
-			});
-		},
-		make = function( type, array ) {
-			array._type = type;
-			return array;
-		},
-		sorter = function ( a, b ) {
-			return a._tr - b._tr;
 		};
 
-	// Parse selector to internal format
-	var tokenize = function() {
-		var text, index;
+	// Clean-up selector.
+	// - merge attributes/class selector etc.
+	// - sort selector for filtering.
+	// - figure out the fastest selector in the queue.
+	function sanitize( q ) {
+		var i = 0, sg, sq, scl, stp, sat, sva, t;
 
-		function error() {
-			return kquery.error( [text,  "character: " + index].join(', ') );
-		}
+		for ( ; sg = q[i]; i++ ) {
+			stp = sg._type;
+			sat = sg[0];
+			sva = sg[1];
 
-		function match( regex ) {
-			var mc = ( regex.lastIndex = index, regex.exec(text) );
-			return mc && mc.index == index ? (index = regex.lastIndex, mc) : null;
-		}
-
-		function parse() {
-			var m, q = [], c = [q], g = [c], x;
-
-			while ( (m = match(rmatches)) !== null ) {
-				// [ ~+>,] group or combination selector
-				if ( m[8] ) {
-					// Selector starts with ','
-					if ( m[8] === "," ) {
-						c.length === 1 && q.length === 0 && error();
-						g.push( c = [ q = [] ] );
-					} 
-					// Invalid combination  div + + div
-					else {
-						q.length === 0 && q._union && error();
-						c.length === 1 && q.length && ( q._union = q._union || " " );
-						(c.length > 1 || c.length === 1 && q.length) && c.push( q = [] );
-						q._union = m[8].replace( rwhitespace, " " );
-					}
-				}
-				// Attribute selector [attr='xxx']
-				else if ( m[1] ) {
-					// [attr='xxx']
-					if ( m[2] && typeof( m[4] ) !== strundefined ) {
-						q.push( make(m[2], [m[1], m[4]]) );
-					}
-					// [attr]
-					else {
-						q.push( make("[", [m[1]]) );
-					}
-				}
-				// .class #ID :pseduo
-				else if ( m[6] ) {
-					if ( m[5] ) {
-						// .class | #id
-						if ( m[5].indexOf(":") === -1 ) {
-							q.push( make(m[5], [m[6]]) );
+			switch ( stp ) {
+				case '=':
+					if ( sva ) {
+						// [name='xxx'] ===> getElementsByName('xxx')
+						if ( sat === 'name' ) {
+							sg = make( 'N', [sva] );
 						}
-						// [:|::]pseduo
-						else {
-							x = m[5] + m[6];
-
-							if ( m[7] ) {
-								if ( x === ':not' || x === ':has' ) {
-									var xi = index, xt = text;
-
-									text = text.slice( xi - m[7].length - 1, xi - 1 );
-									q.push( make(x, [(index = 0, parse()), text]) );
-									( index = xi, text = xt );
-								} else {
-									q.push( make(x, [ m[7] ]) );
-								}
-							} else {
-								q.push( make(x, m[5] === '::' ? [x] : [m[6]]) );
-							}
+						// [id='xxx'] ==> #xxx
+						else if ( sat === 'id' ) {
+							sg = make( '#', [sva] );
 						}
-					} else {
-						q.push( make("T", [m[6]]) );
+						// [class='xxx'] ==> .xxx
+						// [className='xxx'] ==> .xxx
+						// note: XML DOCUMENT does not support getElementsByClassName
+						else if ( isHTML && reclass[ sat ] ) {
+							sg = make( '.', [sva] );
+						}
 					}
+					break;
+				// [class~="xxx"] ===> .xxx
+				// [className~="xxx"] ===> .xxx
+				case '~=':
+					if ( isHTML && sva && reclass[ sat ] ) {
+						sg = make( '.', [sva] );
+					}
+					break;
+				case 'T':
+					// *.class | *[xxx]
+					if ( sat === '*' ) {
+						sg._type = '*';
+					}
+					// >T
+					else if ( q._union == '>' ) {
+						q._tag = sg;
+					}
+					break;
+				// :not(a b) ===> :not-ex(a b)
+				case ':not':
+					//TODO: Optmize selectors like 'div:not(div)', 'div:not(span)'
+					//TODO: Investigate if need to optmize div:has(div) div
+					if ( !((t = sat, t.length === 1) && (t = t[0], t.length === 1)) ) {
+						sg._type = ':not-ex';
+					}
+					break;
+			}
+
+			stp = sg._type;
+			// Merge .class.class2
+			if ( isHTML && stp === '.' ) {
+				if ( !scl ) {
+					scl = sg;
+				} else {
+					scl.push( sg[0] );
+					stp = sg._type = '*';
+					q.splice( i--, 1 );
 				}
 			}
 
-			return g;
+			sg._pri =  pris[ stp ] | 0;
+			sg._tr = retesters[ stp ] | 0;
+
+			// Figure out the fastest selector
+			if ( !sq || sg._pri > sq._pri ) { sq = sg; }
+
+			if ( stp !== '*' ) { q[i] = sg; }
 		}
 
-		return function( expr ) {
-			return (
-				text = expr, index = 0, expr = parse(),
-				match( /\s*/g ), index < text.length ? error() : expr
-			);
-		};
-	}();
-
-	function Compiler( x ) {
-		mixin(this, {
-			isXML: !!x,
-			vars: envs[ x ],
-			has: queryHas( x ),
-			query: queries[ x ],
-			_compile: queryCache(25),
-			_tokenize: queryCache(25)
-		});
+		return ( q.sort(order), q.$ = sq, q );
 	}
 
-	Compiler.prototype = {
-		// Clean-up selector
-		// 1. merge attributes/class selector etc.
-		// 2. sort selector for filtering.
-		// 3. figure out the fastest selector.
-		sanitize: function( queue ) {
-			var isHTML = !this.isXML,
-				finders = this.vars.finders,
-				i = 0, single, fastq, sclass;
+	// Figure out seed selector
+	function compute( token ) {
+		var i = 0, q, pq, sq, fq, qu, qr, qt;
 
-			for ( ; single = queue[i]; i++ ) {
-				var stype = single._type,
-					sattr = single[0],
-					sval = single[1], temp;
+		for ( ; q = token[i]; i++ ) {
+			q = sanitize( q );
+			q.N = '_n' + i;
+			pq = token[ i - 1 ];
+			q.R = pq ? pq.N : 'root';
 
-				switch ( stype ) {
-					case '=':
-						if ( sval ) {
-							// [name='xxx'] ===> getElementsByName('xxx')
-							if ( sattr === 'name' ) {
-								single = make( 'N', [sval] );
-							}
-							// [id='xxx'] ==> #xxx
-							else if ( sattr === 'id' ) {
-								single = make( '#', [sval] );
-							}
-							// [class='xxx'] ==> .xxx
-							// [className='xxx'] ==> .xxx
-							// note: XML DOCUMENT does not support getElementsByClassName
-							else if ( isHTML && vclass[ sattr ] ) {
-								single = make( '.', [sval] );
-							}
-						}
-						break;
-					// [class~="xxx"] ===> .xxx
-					// [className~="xxx"] ===> .xxx
-					case '~=':
-						if ( isHTML && sval && vclass[ sattr ] ) {
-							single = make( '.', [sval] );
-						}
-						break;
-					case 'T':
-						// *.class | *[xxx]
-						if ( sattr === '*' ) {
-							single._type = '*';
-						}
-						// >T
-						else if ( queue._union == '>' ) {
-							queue._tag = single;
-						}
-						break;
-					// :not(a b) ===> :not-ex(a b)
-					case ':not':
-						//TODO: Optmize selectors like 'div:not(div)', 'div:not(span)'
-						//TODO: Investigate if need to optmize div:has(div) div
-						if ( !((temp = sattr, temp.length === 1) &&
-							(temp = temp[0], temp.length === 1)) ) {
-							single._type = ':not-ex';
-						}
-						break;
-				}
+			if ( !sq || q.$._pri > sq._pri ) {
+				sq = q.$;
+				token._index = i;
+			}
+		}
 
-				stype = single._type;
-				// Merge .class.class2
-				if ( isHTML && stype === '.' ) {
-					if ( !sclass ) {
-						sclass = single;
-					} else {
-						sclass.push( single[0] );
-						stype = single._type = '*';
-						queue.splice( i--, 1 );
-					}
-				}
+		i = token._index === 0 ? 0 : token._index + 1;
 
-				single._pri =  finders[ stype ] | 0;
-				single._tr = vtesters[ stype ] | 0;
+		for ( ; q = token[i]; i++ ) {
+			fq = q.$;
+			qu = q._union;
+			qr = fq._pri;
+			qt = q._tag;
 
-				// Figure out the fastest selector
-				if ( !fastq || single._pri > fastq._pri ) {
-					fastq = single;
-				}
-
-				if ( stype !== '*' ) { queue[i] = single; }
+			// >T is faster
+			if ( vbyChildrenTag && qu === '>' &&
+				typeof( qt ) !== strundef && vpriChildren > qr ) {
+				fq = q.$ = make( '>T', [qt[0]] );
+				qt._type = '*';
+			}
+			// Combination selector is faster
+			else if ( pris[ qu ] > qr ) {
+				fq = q.$ = make( qu, [] );
 			}
 
-			return ( queue.sort(sorter), queue.$ = fastq, queue );
-		},
-		// Figure out seed selector
-		compute: function( token ) {
-			var finders = this.vars.finders,
-				has = this.has,
-				len = token.length,
-				i = 0, queue, prev, seed;
+			// No priority selector, use native getElementsByTagName('*')
+			if ( qr === 0 && fq._type !== '*' ) {
+				fq = q.$ = make( '*', ['*'] );
+				q.push( sq );
+			}
+		}
 
-			for ( ; i < len; i++ ) {
-				queue = this.sanitize( token[i] );
-				queue.N = '_n' + i;
-				prev = token[ i - 1 ];
-				queue.R = prev ? prev.N : 'root';
+		// Need to verify node's parent in case kquery('#id', node)
+		// node is not document
+		token[0]._check = vbyTagID ? 0 : sq._type === '#';
 
-				if ( !seed || queue.$._pri > seed._pri ) {
-					seed = queue.$;
-					token._index = i;
+		return token;
+	}
+
+	// Get non-normalized attributes
+	function attr( name ) {
+		if ( isXML ) { return '${N}.getAttribute("' + name + '")'; }
+
+		if ( reuris[name] ) { return '${N}.getAttribute("' + name + '",2)||""'; }
+
+		return reprops[ name ] ||
+			( '(${N}.getAttribute("' + name + '")||${N}["' + name + '"])' );
+	}
+
+	function filter( q ) {
+		var i = q.length, c = [], code;
+
+		while ( i-- ) {
+			if ( code = test(q[i]) ) { c.push( code ); }
+		}
+
+		return c.join( ' && ' );
+	}
+
+	function test( q ) {
+		var type = q._type, val = q[0], m, a, b;
+
+		if ( type.indexOf( '=' ) > -1 ) {
+			q.A = attr( q[0] );
+		}
+
+		switch( type ) {
+			case '.':
+				var i = q.length, c = [];
+
+				if ( i === 0 ) { return ''; }
+				while ( i-- ) {
+					c.push( 't.indexOf(" ${'+ i +'} ")!==-1' );
 				}
+				m = '(t=' + attr('class') + ')&&((t=" "+t+" "),(' + c.join(' && ') + '))';
+
+				return format( m, q );
+			case ':not':
+				m = filter( val[0][0] );
+				return m ? '!(' + m + ')' : 'false';
+			case ':not-ex':
+			case ':has':
+				q.G = diruns++;
+				break;
+			case ':nth-child':
+			case ':nth-last-child':
+			case ':nth-of-type':
+			case ':nth-last-of-type':
+				if ( val === 'odd' ) {
+					a = 2;
+					b = 1;
+				} else if ( val === 'even' ) {
+					a = 2;
+					b = 0;
+				} else {
+					m = rpos.exec( val );
+					a = +(m[1] + (m[2] || 1));
+					b = +m[3];
+				}
+				q[1] = a;
+				q[2] = b;
+				break;
+			default:
+				break;
+		}
+
+		return format( mfilter[type], q );
+	}
+
+	function then( q ) {
+		var code = filter( q );
+
+		code = code ? 'if(' + code + '){${X}}' : '';
+
+		if ( q._check ) {
+			code = format( code, {X: mcond[q._union]} );
+		}
+
+		return code ? format( code, {N: q.N} ) : '${X}';
+	}
+
+	function pass( q, term, union ) {
+		return format( mcomb[ union ], {N: q.N, C: term, X: then( q )} );
+	}
+
+	// Find the seed nodes
+	function find( q, seed, nq ) {
+		var fq = q.$, type = fq._type, code = mfind[ type ],
+			val = type === '.' ? fq.shift() : fq[0], next;
+
+		// Skip seed selector
+		if ( type !== '.' || fq.length === 0 ) {
+			fq._type = '*';
+			fq._orig = type;
+		}
+
+		code = format(code, {
+			P: val,
+			N: q.N,
+			R: seed ? 'root' : q.R,
+			X: then( q )
+		});
+
+		// Optimize to avoid unnecessary loop
+		if ( nq && !reuniques[ type ] && !reuniques[ nq.$._type ] ) {
+			next = format( vstrip, {N: q.N} );
+			code = format( code, {X: next} );
+		}
+
+		return code;
+	}
+
+	// Filter descendants
+	function right( token, next ) {
+		var i = token._index + 1, code = '${X}',
+			pq = token[ i - 1 ], lq = token[ token.length - 1 ],
+			tu = vars.unique, q, sc, nc;
+
+		for ( ; q = token[i]; i++ ) {
+			sc = find( q, 0, token[i + 1] );
+			code = format( code, {X: sc} );
+
+			// Avoid duplicate node
+			if ( !reuniques[ q.$._orig ] && reuniques[ pq.$._orig ] ) {
+				nc = format( tu, {N: q.N} );
+				code = format( code, {X: nc} );
 			}
 
-			i = token._index === 0 ? 0 : token._index + 1;
+			pq = q;
+		}
 
-			for ( ; i < len; i++ ) {
-				queue = token[i];
-				seed = queue.$;
+		nc = format( next, {N: lq.N} );
+		code = format( code, {X: nc} );
 
-				// >T is faster
-				if ( has.byChildrenTag && queue._union === '>' && 
-					typeof( queue._tag ) !== strundefined &&
-					finders['>T'] > seed._pri ) {
-					seed = queue.$ = make( '>T', [queue._tag[0]] );
-					queue._tag._type = '*';
-				}
-				// Combination selector is faster
-				else if ( finders[ queue._union ] > seed._pri ) {
-					seed = queue.$ = make( queue._union, [] );
-				}
+		return code;
+	}
 
-				// No priority selector, use native getElementsByTagName('*')
-				if ( seed._pri === 0 && seed._type !== '*' ) {
-					seed = queue.$ = make( '*', ['*'] );
-					queue.push( seed );
-				}
-			}
+	// Filter ancestors
+	function left( token ) {
+		var code = vars.left, i = token._index - 1, q;
 
-			// Check case "query('#id', root)", root is document.
-			// to make sure that element(#id) is the root's descendant.
-			// TODO: check this logic if it is required
-			if ( !has.byTagID ) {
-				token[0]._check = token[ token._index ].$._type === '#';
-			}
+		// TODO: optimize div #title
+		for ( ; i > -1; i-- ) {
+			q = token[ i + 1 ];
+			code = format( code, {X: pass(token[i], q.N, q._union)} );
+		}
 
-			return token;
-		},
-		// Compile experssion to executable functions
-		compile: function( expr ) {
-			var smain = this.vars.main,
-				query = this._compile[ expr + ' ' ],
-				i, tokens, token;
+		code = format( code, {X: vars.loopbreak} );
+		return format( code, {R: token[0].R} );
+	}
 
-			if ( query ) { return query; }
+	function build( token ) {
+		( diruns = 0, token = compute( token ) );
 
-			tokens = this._tokenize[ expr + ' ' ] ||
-				this._tokenize( expr, tokenize( expr ) );
-			i = tokens.length;
+		var i = token._index,
+			code = find( token[i], 1, token[i + 1] ),
+			next = right( token, vars.push );
+
+		if ( i > 0 ) {
+			next = format( left(token), {Y: next} );
+		}
+
+		return format( code, {X: next} );
+	}
+
+	// Compile experssion to executable functions
+	function main() {
+		var fn = compile.cache( cid, expr ),
+			tm, i, tokens, code, sq = [];
+
+		if ( fn ) { return fn; }
+
+		tokens = tokenize( expr );
+		i = tokens.length;
+		tm = vars.main;
+
+		while ( i-- ) {
+			var sh = {}, sv = [];
+
+			code = build( tokens[i] );
+			// Define variables at the beginning of function statement
+			code = code.replace(/\/\*\^(.*?)\^\*\//g, function( m, p ) {
+				return ( sh[p] || ( sh[p] = sv.push(p) ), '' );
+			});
+			code = format( tm, {X: sv.join('') + code + ''} );
+
+			fn = new Function( 'query', 'context', 'return (' + code + ');' );
+			sq.unshift( fn(query, context) );
+		}
+
+		if ( sq.length === 1 ) {
+			return compile.cache( cid, expr, sq[0] );
+		}
+
+		return compile.cache(cid, expr, function( root, doc, context ) {
+			var i = sq.length, results = [];
 
 			while ( i-- ) {
-				var token = tokens[ i ],
-					code = this.build( token ),
-					shash = {}, svars = [], done;
-
-				// Define variables at the beginning of function statement
-				code = code.replace(/\/\*\^(.*?)\^\*\//g, function( m, p ) {
-					return ( shash[p] || ( shash[p] = svars.push(p) ), '' );
-				});
-				code = format( smain, {X: svars.join('') + code + ''} );
-
-				done = new Function( 'query', 'return (' + code + ');' );
-				tokens[ i ] = done( this.query );
+				push_native.apply( results, sq[i](root, doc, context) );
 			}
 
-			if ( tokens.length === 1 ) {
-				return this._compile( expr, tokens[0] );
-			}
-
-			return this._compile(expr, function( context, xml ) {
-				var len = i = tokens.length, results = [];
-
-				while ( i-- ) {
-					push_native.apply( results, tokens[i](context, xml) );
-				}
-
-				//results = uniqueSort( results, sortOrder );
-				return results;
-			});
-		},
-		build: function( token ) {
-			( diruns = 0, token = this.compute( token ) );
-
-			var index = token._index,
-				code = this.find( token[index], 1, token[index + 1] ),
-				next = this.right( token, this.vars.push );
-
-			if ( index > 0 ) {
-				next = format( this.left(token), {Y: next} );
-			}
-
-			return format( code, {X: next} );
-		},
-		// Find the seed nodes
-		find: function( queue, seed, nextq ) {
-			var fastq = queue.$,
-				type = fastq._type,
-				code = this.vars.find[ type ],
-				val = type === '.' ? fastq.shift() : fastq[0];
-
-			// '>' is faster, byChildren is false, need check nodeType
-			if ( type === '>' && !this.has.byChildren ) {
-				queue.push( make(':element', []) );
-			}
-
-			// Skip seed selector
-			if ( type !== '.' || fastq.length === 0 ) {
-				fastq._type = '*';
-				fastq._orig = type;
-			}
-
-			code = format(code, {
-				P: val,
-				N: queue.N,
-				R: seed ? 'root' : queue.R,
-				X: this.then( queue )
-			});
-
-			// Optimize to avoid unnecessary loop
-			if ( nextq && !vunique[ type ] && !vunique[ nextq.$._type ] ) {
-				next = format( this.vars.strip, {N: queue.N} );
-				code = format( code, {X: next} );
-			}
-
-			return code;
-		},
-		// Filter descendants
-		right: function( token, then ) {
-			var index = token._index + 1,
-				count = token.length,
-				code = '${X}',
-				prevq = token[ index - 1 ],
-				lastq = token[ token.length - 1 ],
-				svunique = this.vars.unique,
-				queue, block, next;
-
-			for ( ; index < count; index++ ) {
-				queue = token[ index ];
-				block = this.find( queue, 0, token[index + 1] );
-				code = format( code, {X: block} );
-
-				// Avoid duplicate node
-				if ( !vunique[ queue.$._orig ] && vunique[ prevq.$._orig ] ) {
-					next = format( svunique, {N: queue.N} );
-					code = format( code, {X: next} );
-				}
-
-				prevq = queue;
-			}
-
-			next = format( then, {N: lastq.N} );
-			code = format( code, {X: next} );
-
-			return code;
-		},
-		// Filter ancestors
-		left: function( token ) {
-			var code = this.vars.left,
-				index = token._index - 1,
-				prev, queue, last;
-
-			// TODO: optimize div #title
-			for ( ; index > -1; index-- ) {
-				queue = token[ index ];
-				last = token[ index + 1 ];
-				prev = this.pass( queue, last.N, last._union );
-				code = format( code, {X: prev} );
-			}
-
-			code = format( code, {X: this.vars.loopbreak} );
-			code = format( code, {R: token[0].R} );
-
-			return code;
-		},
-		pass: function( queue, term, union ) {
-			return format(this.vars.combs[ union ], {
-				N: queue.N,
-				C: term,
-				X: this.then( queue )
-			});
-		},
-		then: function( queue ) {
-			var code = this.filter( queue );
-
-			code = code ? 'if(' + code + '){${X}}' : '';
-			if ( queue._check ) {
-				code = format( code, {X: this.vars.rel[queue._union]} );
-			}
-			return code ? format( code, {N: queue.N} ) : '${X}';
-		},
-		filter: function( queue ) {
-			var len = queue.length,
-				strcode = [], code;
-
-			while ( len-- ) {
-				if ( code = this.test(queue[len]) ) {
-					strcode.push( code );
-				}
-			}
-
-			return strcode.join( ' && ' );
-		},
-		test: function( singleq ) {
-			var type = singleq._type,
-				sval = singleq[0],
-				temp;
-
-			if ( type.indexOf( '=' ) > -1 ) {
-				singleq.A = this.attr( singleq[0] );
-			}
-
-			switch( type ) {
-				case '.':
-					var len = singleq.length,
-						strcode = [];
-
-					if ( len === 0 ) { return ''; }
-					while ( len-- ) {
-						strcode.push( 't.indexOf(" ${'+ len +'} ")!==-1' );
-					}
-
-					temp = '(t=' + this.attr( 'class' ) + ')&&((t=" "+t+" "),('
-						+ strcode.join( ' && ' ) + '))';
-					return format( temp, singleq );
-				case ':not':
-					temp = this.filter( sval[0][0] );
-					return temp ? '!(' + temp + ')' : 'false';
-				case ':not-ex':
-				case ':has':
-					singleq.G = diruns++;
-					break;
-				case ':nth-child':
-				case ':nth-last-child':
-				case ':nth-of-type':
-				case ':nth-last-of-type':
-					// TODO: move out
-					singleq[0] = sval === 'even' ?
-						'2n' : ( sval === 'odd' ? '2n+1' : sval );
-					temp = rpos.exec( singleq[0] );
-					singleq[1] = ( temp[1] + (temp[2] || 1) ) - 0;
-					singleq[2] = temp[3] - 0;
-					break;
-				default:
-					break;
-			}
-
-			return format( this.vars.filter[type], singleq );
-		},
-		// Get non-normalized attributes
-		attr: function( name ) {
-			if ( this.isXML ) {
-				return '${N}.getAttribute("' + name + '")'
-			}
-
-			if ( vuri[name] ) {
-				return '${N}.getAttribute("' + name + '",2)||""';
-			}
-
-			return vprops[ name ] ||
-				( '(${N}.getAttribute("' + name + '")||${N}["' + name + '"])' );
-		}
-	};
-
-	function uniqueSort( results, sortOrder ) {
-		var dups = [], j = 0, i = 0, elem;
-
-		sortOrder && results.sort( sortOrder );
-
-		if ( hasDuplicate ) {
-			while ( (elem = results[i++]) ) {
-				if ( elem === results[ i ] ) {
-					j = dups.push( i );
-				}
-			}
-			while ( j-- ) {
-				results.splice( dups[ j ], 1 );
-			}
-			hasDuplicate = false;
-		}
-
-		return results;
-	}
-
-	function init( x ) {
-		var has = queryHas( x ),
-			num = Number( has.byElement ),
-			strvdoc = '/*^var doc=root.ownerDocument||root;^*/',
-			strvcontains = has.docPos ?
-				'${0}.compareDocumentPosition(${1})&16' :
-				'${0}.contains(${1})',
-			strvhash = '${N}.veroset||(${N}.veroset=++done)',
-			vars = {
-				vdoc: strvdoc,
-				vlink: '/*^var tag_a=xml?"a":"A";^*/',
-				main: 'function(root, xml){var result=[];'
-					+ 'var done=query.veroset,t,r,l=result.length;'
-					+ 'BQ:{${X}}query.veroset=done;return result;}',
-				left: 'var ${R}V={_:false};NP_${R}:{P_${R}:{${X}break NP_${R};}'
-					+ '${R}V._=true;${Y}}',
-				strip: '/*^var ${N}l;^*/if(!${N}l||!('
-					+ format( strvcontains, ['${N}l', '${N}'] ) +')){${X}${N}l=${N};}',
-				unique: '/*^var ${N}h={};^*/if(${N}h[' + strvhash + '])break;'
-					+ '${N}h[' + strvhash + ']=1;${X}',
-				loopbreak: 'break P_${R};',
-				push: 'result[l++]=${N};'
-			}, query;
-
-		// Combination filter
-		var strvmain = 'if(t=${N}h[' + strvhash + ']){if(t._){break P_${R};}'
-			+ 'else{break NP_${R};}}${N}h[' + strvhash + ']=${R}V;${X}',
-			strvtest = format( strvmain, {X: 'if(${N}!==${R}){${X}}'} );
-
-		mixin(vars, {combs: {
-			'>': '/*^var ${N}h={};^*/var ${N}=${C}.parentNode;' + strvtest,
-			' ': '/*^var ${N}h={};^*/var ${N}=${C};'
-				+ 'while(${N}=${N}.parentNode){' + strvtest + '}',
-			'+': num ?
-				'/*^var ${N}h={};var ${N};^*/if(${N}=${C}.previousElementSibling){${X}}' :
-				'/*^var ${N}h={};^*/var ${N}=${C};'
-				+ 'while(${N}=${N}.previousSibling){if(${N}.nodeType===1){${X}break;}}',
-			'~': num ?
-				'/*^var ${N}h={};^*/var ${N}=${C};'
-				+ 'while(${N}=${N}.previousElementSibling){' + strvmain + '}' :
-				'/*^var ${N}h={};^*/var ${N}=${C};while(${N}=${N}.previousSibling)'
-				+ '{if(${N}.nodeType===1){' + strvmain + '}}'
-		}});
-
-		// Seed selectors
-		var strvloop = 'for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){${X}}',
-			strvform = strvdoc + 'var ${N}a='
-				+ 'query("input,select,textarea,option",doc,null,xml);'
-				+ 'for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){',
-			strvelem = has.byTagWithComment ? 'if(${N}.nodeType===1){${X}}' : '${X}',
-			strvtags = 'var ${N}a=${R}.getElementsByTagName("*");'
-				+ format( strvloop, {X: strvelem} ),
-			strvlinks = 'var ${N}a=${R}.getElementsByTagName("a");' + strvloop;
-
-		mixin(vars, {find: {
-			'#': strvdoc + 'var ${N}=query.byId("${P}",${R},doc);if(${N}){${X}}',
-			'N': strvdoc + '/*^var isdoc=${R}===doc;^*/'
-				+ 'var ${N}a=doc.getElementsByName("${P}");'
-				+ 'for(var ${N}i=0,${N};${N}=${N}a[${N}i];${N}i++){if(isdoc||'
-				+ format( strvcontains, ['${R}', '${N}'] ) + '){${X}}}',
-			'T': 'var ${N}a=${R}.getElementsByTagName("${P}");' + strvloop,
-			'.': 'var ${N}a=${R}.getElementsByClassName("${P}");' + strvloop,
-			'*': strvtags,
-			'[': strvtags,
-			'+': num ?
-				'/*^var ${N};^*/if(${N}=${R}.nextElementSibling){${X}}' :
-				'var ${N}=${R};while(${N}=${N}.nextSibling){'
-				+ 'if(${N}.nodeType===1){${X}break;}}',
-			'~': num ?
-				'/*^var ${N}h={};^*/var ${N}=${R};while(${N}=${N}.nextElementSibling){'
-				+ 'if(${N}h[' + strvhash + '])break;${N}h[' + strvhash + ']=1;${X}}' :
-				'/*^var ${N}h={};^*/var ${N}=${R};while(${N}=${N}.nextSibling){'
-				+ 'if(${N}.nodeType===1){if(${N}h[' + strvhash + '])break;'
-				+ '${N}h[' + strvhash + ']=1;${X}}}',
-			'>': has.byChildren ? 
-				'var ${N}a=${R}.children;' + strvloop :
-				'var ${N}a=${R}.childNodes;' + strvloop,
-			'>T': 'var ${N}a=${R}.children.tags("${P}");' + strvloop,
-			':root': strvdoc + 'var ${N}a=[doc.documentElement];' + strvloop,
-			':link': strvlinks,
-			':visited': strvlinks,
-			':checked': 'var ${N}a=${R}.getElementsByTagName("input");' + strvloop,
-			':enabled': strvform + 'if(${N}.disabled===false){${X}}}',
-			':disabled': strvform + 'if(${N}.disabled===true){${X}}}'
-		}});
-
-		// Check ancestor/sibling
-		mixin(vars, {rel: {
-			'>': 'if(${N}.parentNode===root){${X}}',
-			'+': num ?
-				'if(${N}.previousElementSibling===root){${X}}' :
-				'var ${N}=${C};while(${N}=${N}.previousSibling){'
-				+ 'if(${N}.nodeType===1){break}}if(${N}===root){${X}}',
-			'~': num ?
-				'if(root.compareDocumentPosition(${N})&4){${X}}' :
-				'if((root!=${N}&&root.contains(${N})&&16 )+'
-				+ '(root!=${N}&&${N}.contains(root)&&8)+(root.nodeType===1?'
-				+ '(root.sourceIndex<${N}.sourceIndex&&4)+('
-				+ 'root.sourceIndex>${N}.sourceIndex&&2):1)&4){${X}}'
-		}});
-
-		// Condition filters
-		var strvattr = '(t=${A})&&t.indexOf("${1}")',
-			strvcache = '/*^var rev=query.verocache;^*/';
-
-		mixin(vars, {filter: {
-			'T': '/*^var ${N}t=xml?"${0}":("${0}").toUpperCase();^*/'
-				+ (x ? '((r=${N}.nodeName)&&(t=r.indexOf(":"))>0&&'
-				+ 'r.substr(t+1)||r)' : '${N}.nodeName') + '===${N}t',
-			'#': '${N}.getAttribute("id")==="${0}"',
-			'N': '${N}.getAttribute("name")==="${0}"',
-			'[': has.hasAttribute ?
-				'${N}.hasAttribute("${0}")' :
-				'(t=${N}.getAttributeNode("${0}"))&&(t.specified)',
-			'=': '${A}==="${1}"',
-			'!=': '${A}!=="${1}"',
-			'^=': strvattr + '===0',
-			'$=': strvattr + '===(t.length - "${1}".length)',
-			'*=': strvattr + '!==-1',
-			'|=': '(t=${A})&&t.indexOf("-${1}-")!==-1',
-			'~=': '(t=${A})&&(" "+t+" ").indexOf("${1}")!==-1',
-			'*': '',
-
-			':nth-child': strvcache + 'query.nth(${N},${1},${2},rev)',
-			':nth-last-child': strvcache + 'query.nth(${N},${1},${2},rev,true)',
-			':nth-of-type': strvcache + 'query.nthtype(${N},${1},${2},rev)',
-			':nth-last-of-type': strvcache + 'query.nthtype(${N},${1},${2},rev,true)',
-			':first-child': num ? '!${N}.previousElementSibling' : 'query.first(${N})',
-			':last-child': num ? '!${N}.nextElementSibling' : 'query.last(${N})',
-			':first-of-type': 'query.firsttype(${N})',
-			':last-of-type': 'query.lasttype(${N})',
-			':only-child': num ?
-				'(t=${N}.parentNode)&&(t.firstElementChild===t.lastElementChild)' :
-				'query.only(${N})',
-			':only-of-type': 'query.onlytype(${N})',
-	
-			':root': '${N}===doc.documentElement',
-			':empty': '!${N}.firstChild',
-			':lang': '${N}.lang==="${0}"',
-
-			// FIXME: investigation :visited
-			':link': vars.vlink + '${N}.nodeName===tag_a',
-			':visited': 'false',
-			':hover': strvdoc + '${N}===doc.hoverElement',
-
-			':active': strvdoc + '${N}===doc.activeElement',
-			':focus': strvdoc + '${N}===doc.activeElement&&(!doc.hasFocus||'
-				+ 'doc.hasFocus())&&!!(${N}.type||${N}.href)',
-			':target': strvdoc + '${N}.id&&doc.location.hash.slice(1)===${N}.id',
-
-			':enabled': '${N}.disabled===false',
-			':disabled': '${N}.disabled===true',
-			':checked': '${N}.checked===true',
-
-			// Does not match a real document element
-			'::first-line': 'false',
-			'::first-letter': 'false',
-			'::before': 'false',
-			'::after': 'false',
-			// Dynamically generate in filter
-			':not': '',
-
-			// Extended pseudos selectors
-			':element': '${N}.nodeType===1',
-			// For support selector ':contains(text)'
-			':contains': (has.textContent ? '${N}.textContent' :
-				(x ? 'query.getText(${N})' : '${N}.innerText')) + '.indexOf("${0}")>-1',
-			// FIXME: not works as expected
-			':not-ex': '/*^var _${G}=query.cacheMatch(query("${1}",root));'
-				+ 'done=query.veroset;^*/!_${G}[' + strvhash + ']',
-			':has': '(t=query("${1}", ${N}),done=query.veroset,t.length>0)'
-		}});
-
-		// Priority of seed selector
-		mixin(vars, {finders: {
-			':root': 10, '+': 10,
-			'#': has.byId ? rfinders['#'] : 0,
-			'>T': has.byChildTag ? rfinders['>T'] : 0,
-			'N': has.byName ? rfinders['N'] : 0,
-			'.': has.byClass ? rfinders['.'] : 0,
-			'>': 6, '~': 6, 'T': 5,
-			':checked': 4, ':enabled': 4, ':disabled': 4,
-			':link': 3, ':visited': 3,
-			'*': 0
-		}});
-
-		// Generate query function
-		var strprev = num ? 'previousElementSibling' : 'previousSibling',
-			strnext = num ? 'nextElementSibling' : 'nextSibling',
-			strfirst = num ? 'firstElementChild' : 'firstChild',
-			strelem =  num ? 'node.nodeName===name' :
-				'node.nodeType===1&&node.nodeName===name',
-			strmarges = 'while ( node = node.${0} ) {'
-				+ 'if ( node.nodeType === 1 ) {return false;}'
-				+ '}return true;',
-			strchild = 'var name = node.nodeName;'
-				+ 'while ( node=node.${0} ) {'
-				+ 'if ( ' + strelem + ' ) {return false;}'
-				+ '}return true;',
-			strsibling = 'var p = node.parentNode, count = 0, pos, t;${0}'
-				+ 'if ( a === 1 && b === 0 ) {'
-				+ 'return true;'
-				+ '} else if ( a === 0 && b === 0 ) {'
-				+ 'return false;}'
-				+ 'if ( p && (p.verocache !== cache || !node.veroindex) ) {'
-				+ 'for ( t = p.' + strfirst + '; t; t = t.' + strnext + ' ) {'
-				+ '${1}'
-				+ '}p.verocache = cache;p.verocount = count;}'
-				+ 'pos = end ? p.verocount - node.veroindex + 1 : node.veroindex;'
-				+ 'return a ? (pos - b) % a === 0 : pos === b;';
-
-		// query api
-		query = function( expr, context, seed ) {
-			var results = compilers[ x ].compile( expr )( context, !!x );
-			query.verocache += 1;
-			return seed ? query.matchHas( seed, results ) : results;
-		};
-
-		mixin(query, {
-			veroset: 1,
-			verocache: 1,
-			cacheMatch: function ( array ) {
-				var sets = array.verohash;
-
-				if ( !sets ) {
-					var len = array.length,
-						done = query.veroset;
-
-					sets = array.verohash = {};
-					while ( len-- ) {
-						var it = array[len];
-						sets[ it.veroset || (it.veroset = ++done) ] = 1;
-					}
-					query.veroset = done;
-				}
-				return sets;
-			},
-			matchHas: function( accepter, sender ) {
-				var sets = query.cacheMatch( sender ),
-			    	rs = [], i = 0, elem;
-
-				for ( ; i < accepter.length; i++ ) {
-					elem = accepter[i];
-					if ( sets[elem.veroset || (elem.veroset = ++query.veroset)] ) {
-						rs.push( elem );
-					}
-				}
-
-				return rs;
-			},
-			// :nth-child(xxxx) :ntn-last-child(xxx)
-			nth: newFun('node, a, b, cache, end', strsibling, [
-				'', num ? 't.veroindex = ++count;' :
-					'if ( t.nodeType === 1 ) {t.veroindex = ++count;}'
-				]),
-			// :nth-of-type(xxx) :nth-last-of-type(xxx)
-			nthtype: newFun('node, a, b, cache, end', strsibling, [
-				'var name = node.nodeName;',
-				'if ( t.nodeName === name ) {t.veroindex = ++count;}'
-				]),
-			// :first-child
-			first: newFun( 'node', strmarges, [strprev] ),
-			// :last-child
-			last: newFun( 'node', strmarges, [strnext] ),
-			// :only-child
-			only: function( node ) {
-				return query.last( node ) && query.first( node );
-			},
-			// :first-of-type
-			firsttype: newFun( 'node', strchild, [strprev] ),
-			// :last-of-type
-			lasttype: newFun( 'node', strchild, [strnext] ),
-			// :only-of-type
-			onlytype: function ( node ) {
-				return query.lasttype( node ) && query.firsttype( node );
-			}
+			//results = uniqueSort( results, sortOrder );
+			return results;
 		});
-
-		if ( has.byId ) {
-			query.byId = function( id, elem, doc ) {
-				var m = doc.getElementById( id );
-				return m && m.parentNode ? m : null;
-			};
-			if ( has.buggyById ) {
-				query.byId = function( id, elem, doc ) {
-					var m = doc.getElementById( id );
-
-					return m && m.parentNode ?
-						( elem.nodeType === 1 && contains(elem, m) ) && m.id === id ||
-						typeof m.getAttributeNode !== strundefined &&
-						m.getAttributeNode('id').value === id ?
-							m :
-							null :
-						null;
-				};
-			}
-		}
-		// Support element.getElementById
-		else if ( has.byTagID ) {
-			query.byId = function( id, elem, doc ) {
-				return elem.getElementsByTagName('*')[id];
-			};
-		}
-
-		( envs[x] = vars, queries[x] = query, compilers[x] = new Compiler(x) );
 	}
 
-	( init( 0 ), init( 1 ) );
+	return main();
+};
 
-	return {
-		query: function( expr, context, seed ) {
-			context = context || document;
-			return queries[ isXML(context, 1) ]( expr, context, seed );
-		},
-		compile: function( expr, context ) {
-			context = context || document;
-			return compilers[ isXML( context, 1 ) ].compile( expr );
-		}
-	};
-}();
+compile.store = {};
+compile.cache = function( id, expr, value ) {
+	var store = this.store[id] || (this.store[id] = createCache(25));
+	return value ? store( expr, value ) : store[ expr + ' ' ];
+}
 
-// === selector engine ===
+function canQSA( expr, context ) {
+	var selectors = context.selectors,
+		cached =  selectors[ expr ], has, rqsaBugs;
 
-function kquery( selector, context, seed ) {
-	var match, elem, xdoc, has, m, nodeType, results = [];
+	if ( typeof cached !== strundef ) { return cached; }
 
-	context = context || document;
+	has = context.has;
+	rqsaBugs = has.rqsaBugs;
 
-	if ( !selector || typeof selector !== "string" ) {
+	if ( has.qsa && (!rqsaBugs || !rqsaBugs.test( expr.replace(rvalidator, '') )) ) {
+		return ( selectors[ expr ] = 1 );
+	}
+
+	return ( selectors[ expr ] = 0 );
+}
+
+// in XML Document, querySelectorAll not works with ID/CLASS selectors.
+function kquery( expr, root, seed ) {
+	var match, node, context, doc, isHTML, has, m, nodeType, result = [];
+
+	root = root || document;
+
+	if ( !expr || typeof expr !== "string" ) {
 		return [];
 	}
 
-	if ( (nodeType = context.nodeType) !== 1 && nodeType !== 9 ) {
+	if ( (nodeType = root.nodeType) !== 1 && nodeType !== 9 ) {
 		return [];
 	}
 
-	xdoc = isXML( context, 1 );
-	has = queryHas( xdoc );
+	context = setContext( (doc = root.ownerDocument || root) );
+	isHTML = !context.isXML;
 
-	if ( !xdoc && !seed ) {
-		// Simple selector
-		if ( (match = rquickExpr.exec( selector )) ) {
+	// TODO: XML document should use QSA
+	if ( !seed ) {
+		// Simple selector under HTML Document
+		if ( isHTML && (match = rquickExpr.exec( expr )) ) {
 			// Speed-up: "#ID"
 			if ( (m = match[1]) ) {
-				if ( nodeType === 9 ) {
-					elem = context.getElementById( m );
-					// Check parentNode to catch when Blackberry 4.6 returns
-					// nodes that are no longer in the document
-					if ( elem && elem.parentNode ) {
-						// Handle the case where IE, Opera, and Webkit return items
-						// by name instead of ID
-						if ( elem.id === m ) { return [ elem ]; }
-					} else {
-						return [];
-					}
-				} else {
-					// Context is not a document
-					if ( context.ownerDocument && (elem = context.ownerDocument.getElementById( m )) &&
-						contains( context, elem ) && elem.id === m ) {
-						return [ elem ];
-					}
-				}
-
+				return [ context.byId( expr, root, doc ) ];
 			// Speed-up: "TAG"
 			} else if ( match[2] ) {
-				push.apply( results, context.getElementsByTagName( selector ) );
-				return results;
-
+				push.apply( result, root.getElementsByTagName( expr ) );
+				return result;
 			// Speed-up: ".CLASS"
-			} else if ( (m = match[3]) && has.byClass && context.getElementsByClassName ) {
-				push.apply( results, context.getElementsByClassName( m ) );
-				return results;
+			} else if ( (m = match[3]) && context.has.byClass ) {
+				push.apply( result, root.getElementsByClassName( m ) );
+				return result;
 			}
 		}
 
 		// QSA path
-		if ( has.qsa && (!has.rqsaBugs || !has.rqsaBugs.test(selector)) ) {
-			var oid = true,
-				nid = 'verocache' + ( new Date().getTime() ),
-				ncontext = context,
-				nselector = nodeType === 9 && selector;
+		if ( canQSA(expr, context) ) {
+			var oid = true, nid = 'kqcache' + now(),
+				newr = root, newe = nodeType === 9 && expr;
 
 			// qSA works strangely on Element-rooted queries
 			// We can work around this by specifying an extra ID on the root
 			// and working up from there (Thanks to Andrew Dupont for the technique)
 			// IE 8 doesn't work on object elements
-			if ( nodeType === 1 && context.nodeName.toLowerCase() !== "object" ) {
-				if ( (oid = context.getAttribute("id")) ) {
-					nid = oid.replace( rescape, "\\$&" );
+			if ( isHTML && nodeType === 1 && root.nodeName.toLowerCase() !== 'object' ) {
+				if ( (oid = root.getAttribute('id')) ) {
+					nid = oid.replace( rescape, '\\$&' );
 				} else {
-					context.setAttribute( "id", nid );
+					root.setAttribute( 'id', nid );
 				}
 
-				nselector = selector.replace( rtrim, "" );
-				nselector = nselector.replace( rgroups, "[id='" + nid + "'] $&" );
-				ncontext = rsibling.test( selector ) && context.parentNode || context;
+				newe = newe.replace( rgroups, '#' + nid + ' $&' );
+				newr = rsibling.test( expr ) && root.parentNode || root;
 			}
 
-			if ( nselector ) {
-				// non-standard selector exit to use queryEngine.query
+			if ( newe ) {
+				// non-standard selector exit to use js query
 				try {
-					push.apply( results, ncontext.querySelectorAll( nselector ) );
-					return results;
+					push.apply( result, newr.querySelectorAll( newe ) );
+					return result;
 				} catch( e ) {} finally {
-					if ( !oid ) { context.removeAttribute( "id" ); }
+					if ( !oid ) { root.removeAttribute( 'id' ); }
 				}
 			}
 		}
 	}
 
 	// All others
-	return queryEngine.query( selector.replace( rtrim, "$1" ), context, seed );
+	return query( expr.replace( rtrim, '$1' ), root, seed, doc, context );
 }
 
-kquery.compile = queryEngine.compile;
+kquery.isXML = isXML;
+kquery.compile = compile;
 
-kquery.matches = function( selector, elements ) {
-	return kquery( selector, null, elements );
+// TODO: simplify to keep only one 'match' api.
+kquery.matches = function( expr, elements ) {
+	return kquery( expr, null, elements );
 };
 
-kquery.matchesSelector = function( elem, selector ) {
-	var xdoc = isXML( elem, 1 ),
-		has = queryHas( xdoc ),
-		matches = has.matches;
+kquery.match = function( node, expr ) {
+	var context = setContext( node.ownerDocument || node ),
+		has = context.has, matches = context.matches;
+
 	// Make sure that attribute selectors are quoted
-	selector = selector.replace( rattributeQuotes, "='$1']" );
+	expr = expr.replace( rattributeQuotes, "='$1']" );
 
 	// rbuggyQSA always contains :focus, so no need for an existence check
-	if ( matches && !xdoc &&
-		(!has.rmatchBugs || !has.rmatchBugs.test(selector)) &&
-		!has.rqsaBugs.test(selector) ) {
+	if ( matches && (!has.rmatchBugs || !has.rmatchBugs.test(expr)) &&
+		!has.rqsaBugs.test(expr) ) {
 		try {
-			var ret = matches.call( elem, expr );
+			var ret = matches.call( node, expr );
 
 			// IE 9's matchesSelector returns false on disconnected nodes
 			// As well, disconnected nodes are said to be in a document
 			// fragment in IE 9
 			if ( ret || has.disconnectedMatch ||
-					elem.document && elem.document.nodeType !== 11 ) {
+					node.document && node.document.nodeType !== 11 ) {
 				return ret;
 			}
 		} catch(e) {}
 	}
 
-	return queryEngine.query( selector, elem, [elem] ).length > 0;
-};
-
-kquery.isXML = function( node ) {
-	return isXML( node );
+	return query( expr, node, [node] ).length > 0;
 };
 
 kquery.contains = function( a, b ) {
-	return queryHas( isXML(a, 1) ).contains( a, b );
+	return setContext( a ).contains( a, b );
 };
 
 kquery.error = function( msg ) {
 	throw new Error( 'SyntaxError: ' + msg );
 };
+
+setContext( document );
 
 // Expose
 if ( typeof define === "function" && define.amd ) {
