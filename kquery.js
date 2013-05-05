@@ -12,7 +12,7 @@
  *   - qsa buggy detection
  */
 
-(function( window, undefined ) {
+(function( window ) {
 
 var document = window.document,
 	// Whitespace characters http://www.w3.org/TR/css3-selectors/#whitespace
@@ -30,10 +30,10 @@ var document = window.document,
 		whitespace + "*\\]",
 	pseudos = "\\((\\([^()]+\\)|[^()]+)+\\)",
 	combinators = whitespace + "*([\\x20\\t\\r\\n\\f>+~,])" + whitespace + "*",
-	groups = "(?=[^\\x20\\t\\r\\n\\f])(?:\\\\.|" + attributes
-		+ "|(" + identifier + "?)(" + tags + ")(?:" + pseudos + ")?|[^\\\\(),])+",
-	matches = "(?:" + attributes + "(?!" + tags + "))|(" + identifier + "?)("
-		+ tags + ")(?:" + pseudos + "(?!" + tags + "))?|(?:" + combinators + ")",
+	groups = "(?=[^\\x20\\t\\r\\n\\f])(?:\\\\.|" + attributes +
+		"|(" + identifier + "?)(" + tags + ")(?:" + pseudos + ")?|[^\\\\(),])+",
+	matches = "(?:" + attributes + "(?!" + tags + "))|(" + identifier + "?)(" +
+		tags + ")(?:" + pseudos + "(?!" + tags + "))?|(?:" + combinators + ")",
 
 	rwhitespace = new RegExp( whitespace + "+" ),
 	rpos = /([+\-]?)(\d*)(?:n([+\-]?\d*))?/,
@@ -41,8 +41,8 @@ var document = window.document,
 	rgroups = new RegExp( groups + "?(?=" + whitespace + "*,|$)", "g" ),
 	rquickExpr = /^(?:#([\w\-]+)|(\w+)|\.([\w\-]+))$/,
 	rmatches = new RegExp( matches, "g" ),
-	rtrim = new RegExp( "^" + whitespace + "+|((?:^|[^\\\\])(?:\\\\.)*)"
-		+ whitespace + "+$", "g" ),
+	rtrim = new RegExp( "^" + whitespace + "+|((?:^|[^\\\\])(?:\\\\.)*)" +
+		whitespace + "+$", "g" ),
 	rescape = /'|\\/g,
 	rattributeQuotes = /\=[\x20\t\r\n\f]*([^'"\]]*)[\x20\t\r\n\f]*\]/g,
 	rvalidator = /\(.+?\)|\[.+?\]/g,
@@ -122,7 +122,7 @@ function isNative( fn ) {
 
 function format( template, props ) {
 	return template.replace(/\$\{([^\}]+)\}/g, function(m, p) {
-		 return typeof props[p] === strundef ? m : props[p] + '';
+		return typeof props[p] === strundef ? m : props[p] + '';
 	});
 }
 
@@ -516,7 +516,7 @@ setContext = function( doc ) {
 	return ( contexts[ ks ] = context );
 };
 
-tokenize = function() {
+tokenize = (function() {
 	var text, index;
 
 	function error() {
@@ -613,7 +613,7 @@ tokenize = function() {
 
 		return tkns;
 	};
-}();
+})();
 
 tokenize.store = createCache();
 tokenize.cache = function( expr, value ) {
@@ -689,7 +689,7 @@ contains = [
 		return !!(a.compareDocumentPosition(b) & 16);
 	},
 	function( a, b ) {
-	    return a !== b && (a.contains ? a.contains(b) : true);
+		return a !== b && (a.contains ? a.contains(b) : true);
 	},
 	function( a, b ) {
 		while ( (b = b.parentNode) ) {
@@ -927,7 +927,7 @@ compile = function( expr, context ) {
 						sg._type = '*';
 					}
 					// >T
-					else if ( q._union == '>' ) {
+					else if ( q._union === '>' ) {
 						q._tag = sg;
 					}
 					break;
@@ -1368,4 +1368,4 @@ if ( typeof define === "function" && define.amd ) {
 	window.kquery = kquery;
 }
 
-})( window );
+})( window, undefined );
