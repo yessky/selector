@@ -1,15 +1,14 @@
 /*
- * KQuery - Super Fast and Compatible CSS Selector Engine
+ * KS - Super Fast and Compatible CSS Selector Engine
  * Copyright (C) 2011 - 2013 aaron.xiao
  * Author: aaron.xiao <admin@veryos.com>
  * Version: 2.0b
  * Release: 2013/08/17
- * License: http://kquery.veryos.com/MIT-LICENSE
+ * License: http://selector.veryos.com/MIT-LICENSE
  * Credits: 
  * Sizzle.js - http://sizzlejs.org
  *   - buggy detection
  */
-
 
 (function( window ) {
 
@@ -21,13 +20,10 @@ var version = '2.0.build',
 	encoding = '(?:\\\\.|[\\w-]|[^\\x00-\\xa0])+',
 	// CSS identifier characters
 	identifier = encoding.replace( 'w', 'w#' ),
-	// Acceptable operators http://www.w3.org/TR/selectors/#attribute-selectors
-	operators = '([*^$|!~]?=)',
 	attributes = '\\[' + whitespace + '*(' + encoding + ')' + whitespace +
-		'*(?:' + operators + whitespace + '*(?:([\'"])((?:\\\\.|[^\\\\])*?)\\3|(' +
+		'*(?:([*^$|!~]?=)' + whitespace + '*(?:(["\'])((?:\\\\.|[^\\\\])*?)\\3|(' +
 		identifier + ')|)|)' + whitespace + '*\\]',
-	pseudos = ':(' + encoding + ')(?:\\((((?:\\\\.|[^\\\\])*?)|((?:\\\\.|[^\\\\()[\\]]|' +
-		attributes.replace( 3, 7 ) + ')*)|.*)\\)|)',
+	pseudos = ':(' + encoding + ')(?:\\((\\([^()]+\\)|[^()]+)+\\)|)',
 
 	rtrim = new RegExp( '^' + whitespace + '+|((?:^|[^\\\\])(?:\\\\.)*)' +
 		whitespace + '+$', 'g' ),
@@ -221,25 +217,9 @@ function byCheck( context ) {
  * Feature/bug detection & init compiler env
  */
 
-function addHandle( attrs, handler ) {
-	var arr = attrs.split('|'),
-		i = attrs.length;
-
-	while ( i-- ) {
-		scope.attrHandle[ arr[i] ] = handler;
-	}
-}
-
 function nthFunc( code ) {
 	return new Function( 'elem, backward, a, b, cache' , CHILD.replace('@', code) );
 }
-
-var scope,
-	docset = 1,
-	uid = 'kqset_' + (new Date()).getTime(),
-	scopeCache = createCache(),
-	booleans = 'checked|selected|async|autofocus|autoplay|controls|defer|' +
-		'disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped';
 
 var CHILD = 'if(b===0){if(a===1){return true;}if(a===0){return false;}}' +
 	'var p=elem.parentNode,count=0,name,pos,t;' +
@@ -282,6 +262,13 @@ var contains = [
 	}
 ];
 
+var scope,
+	docset = 1,
+	uid = 'kqset_' + (new Date()).getTime(),
+	scopeCache = createCache(),
+	bools = 'checked|selected|async|autofocus|autoplay|controls|defer|' +
+		'disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped';
+
 function setContext( doc ) {
 	if ( isXML(doc) ) {
 		return;
@@ -323,18 +310,6 @@ function setContext( doc ) {
 		scope.byClass = div.getElementsByClassName('e').length === 2;
 	}
 
-	scope.attrHandle = {};
-
-	// Support: IE<9
-	// Use getAttributeNode to fetch booleans when getAttribute lies
-	if ( div.getAttribute('disabled') != null ) {
-		addHandle( booleans, function( elem, name ) {
-			var val;
-			return (val = elem.getAttributeNode( name )) && val.specified ?
-				val.value : elem[ name ] === true ? name.toLowerCase() : null;
-		});
-	}
-
 	// IE will return comment node append by javascript
 	div.appendChild( doc.createComment('') );
 	scope.byTagWithComment = div.getElementsByTagName('*').length > 2;
@@ -360,7 +335,7 @@ function setContext( doc ) {
 
 		// IE8 - Some boolean attributes are not treated correctly
 		if ( !div.querySelectorAll('[selected]').length ) {
-			rbuggyQSA.push( '\\[' + whitespace + '*(?:value|' + booleans + ')' );
+			rbuggyQSA.push( '\\[' + whitespace + '*(?:value|' + bools + ')' );
 		}
 
 		// :checked should return selected option elements
@@ -486,7 +461,7 @@ function tokenize( selector, isParser ) {
 		// Comma
 		if ( (matches = rcomma.exec( text )) ) {
 			// Trailing combinator is invalid
-			if ( !token || !regexps[token.type] ) { break; }
+			if ( !token || token.type in combinators ) { break; }
 			// Trailing commas is invalid
 			text = text.substr( matches[0].length ) || text;
 			deep = 0;
@@ -498,7 +473,7 @@ function tokenize( selector, isParser ) {
 		// Combinators
 		if ( (matches = rcombinators.exec( text )) ) {
 			// Consecutive combinators is invalid
-			if ( token && !(token.type in regexps) ) { break; }
+			if ( token && token.type in combinators ) { break; }
 			chunk.deep = ++deep;
 			expr = matches.shift();
 			text = text.substr( expr.length );
@@ -527,6 +502,7 @@ function tokenize( selector, isParser ) {
 					matches = prechild( matches );
 				} else if ( type === 'PSEUDO' ) {
 					if ( matches[0] === 'has' || matches[0] === 'not' ) {
+						//Validate syntax of given selector
 						tokenize( matches[1] );
 					}
 				}
@@ -580,7 +556,11 @@ var ATTR_INTER = {type: 1, href: 1, height: 1, width: 1};
 
 var ATTR_SPEC = {'class': 'className', 'value': 'value'};
 
-var ATTR_BOOLEAN = {};
+var ATTR_BOOLEAN = {
+	checked: 1, selected: 1, async: 1, autofocus: 1, autoplay: 1, controls: 1,
+	defer: 1, disabled: 1, hidden: 1, ismap: 1, loop: 1, multiple: 1, open: 1,
+	readonly: 1, required: 1, scoped: 1
+};
 
 var SPEED = 'm=e.kqset||(e.kqset=++k);' +
 	'if(t=c@[m]){if(t._){r[l++]=z[i];s._=true;}continue ps;}c@[m]=s;';
@@ -941,7 +921,7 @@ query.attr = function( elem, name ) {
 		return elem[ ATTR_SPEC[name] ] || '';
 	} else if ( name in ATTR_BOOLEAN ) {
 		return (val = elem.getAttributeNode( name )) && val.specified ?
-			val.value : elem[ name ] === true ? name : 'false';
+			val.value : elem[ name ] === true ? name.toLowerCase() : 'false';
 	}
 
 	return scope.attributes ? elem.getAttribute( name ) || '' :
@@ -1009,7 +989,7 @@ query.lastType = function( elem ) {
 	return true;
 };
 
-function kquery( selector, context ) {
+function KS( selector, context ) {
 	var i, result, nodeType, doc, m, match,
 		group, newContext, newSelector, nid, old;
 
@@ -1085,15 +1065,15 @@ function kquery( selector, context ) {
 	return query( selector.replace( rtrim, '$1' ), context, doc, m );
 }
 
-kquery.version = version;
+KS.version = version;
 
-kquery.about = function() {
+KS.about = function() {
 	alert( 'KQuery - A Super Fast and Compatible CSS Selector Engine\n' +
 		'author: aaron.xiao\nemail: admin@veryos.com\n' +
 		'version: ' + version );
 };
 
-kquery.compile = function( selector, doc ) {
+KS.compile = function( selector, doc ) {
 	var group = tokenize( selector ),
 		i = group.length, part, cache;
 
@@ -1124,17 +1104,17 @@ kquery.compile = function( selector, doc ) {
 	});
 };
 
-kquery.filter = function( seed, selector ) {
+KS.filter = function( seed, selector ) {
 	var doc = seed[0].ownerDocument || document;
 	setContext( doc );
-	return kquery.compile( selector, doc )( seed, doc, doc, scope, query );
+	return KS.compile( selector, doc )( seed, doc, doc, scope, query );
 };
 
-kquery.attr = function( elem, name ) {
+KS.attr = function( elem, name ) {
 	return isXML( elem ) ? elem.getAttribute( name ) : query.attr( elem, name );
 };
 
-kquery.match = function( elem, selector ) {
+KS.match = function( elem, selector ) {
 	var expr = selector.replace( rattributeQuotes, '="$1"]' );
 
 	setContext( elem );
@@ -1155,16 +1135,18 @@ kquery.match = function( elem, selector ) {
 		} catch(e) {}
 	}
 
-	return kquery.filter( [elem], selector ).length > 0;
+	return KS.filter( [elem], selector ).length > 0;
 };
 
+// Pre-execute for speed-up
 tokenize('div p a');
 setContext( document );
 
+// Expose API
 if ( typeof define === 'function' && define.amd ) {
-	define(function() { return kquery; });
+	define(function() { return KS; });
 } else {
-	window.kquery = kquery;
+	window.KS = KS;
 }
 
 })( window );
