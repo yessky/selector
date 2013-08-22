@@ -554,7 +554,7 @@ var ATTR_BOOLEAN = {
 };
 
 var SPEED = 'm=e.kqset||(e.kqset=++k);' +
-	'if(t=c@[m]){if(t._){r[l++]=z[i];s._=true;}continue ps;}c@[m]=s;';
+	'if(t=c@[m]){if(t._){r[l++]=n;s._=true;}continue ps;}c@[m]=s;';
 
 var MAIN = 'var v=q.kqcache,k=q.kqset;ps:while((e=z[++i])){@}q.kqset=k;return r;';
 
@@ -816,7 +816,7 @@ function compile( selector, chunk, deep, optima ) {
 
 	type = chunk[0].type;
 	i = type in combinators ? 1 : 0;
-	code = optima ? 'r[l++]=e;s._=true;continue ps;' : 'r[l++]=e;continue ps;';
+	code = optima ? 'r[l++]=n;s._=true;continue ps;' : 'r[l++]=n;continue ps;';
 	code = rootages[ i === 1 ? type : ' ' ]( code );
 
 	while ( (token = chunk[i++]) ) {
@@ -839,8 +839,8 @@ function compile( selector, chunk, deep, optima ) {
 		code = 'if(' + items.join('&&') + '){' + code + '}';
 	}
 
-	code = MAIN.replace( '@', optima ? 'var s={_:false};' + code : code );
-	code = 'var r=[],i=-1,l=0,e=c,p,t,m;' + code;
+	code = MAIN.replace( '@', optima ? 'var s={_:false};n=e;' + code : code );
+	code = 'var r=[],i=-1,l=0,e=c,p,t,m,n;' + code;
 	for ( item in def ) { code = item + code; }
 
 	//console.timeEnd('compile')
