@@ -23,7 +23,8 @@ var version = '2.0.build',
 	attributes = '\\[' + whitespace + '*(' + encoding + ')' + whitespace +
 		'*(?:([*^$|!~]?=)' + whitespace + '*(?:(["\'])((?:\\\\.|[^\\\\])*?)\\3|(' +
 		identifier + ')|)|)' + whitespace + '*\\]',
-	pseudos = ':(' + encoding + ')(?:\\((\\([^()]+\\)|[^()]+)+\\)|)',
+	pseudos = ':(' + encoding + ')(?:\\((((?:\\\\.|[^\\\\()[\\]]|' +
+		attributes.replace( 3, 6 ) + ')*)|.*)\\)|)',
 
 	rtrim = new RegExp( '^' + whitespace + '+|((?:^|[^\\\\])(?:\\\\.)*)' +
 		whitespace + '+$', 'g' ),
