@@ -1,8 +1,8 @@
 {
-  "name": "kquery",
+  "name": "KS",
   "description": "A Super Fast And Compatible CSS Selector Engine",
   "version": "2.0.0",
-  "homepage": "https://github.com/yessky/kquery",
+  "homepage": "https://github.com/yessky/selector",
   "author": {
     "name": "aaron.xiao",
     "email": "xuanziday@163.com",
@@ -10,14 +10,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/yessky/kquery.git"
+    "url": "git://github.com/yessky/selector.git"
   },
-  "bugs": "https://github.com/yessky/kquery/issues",
+  "bugs": "https://github.com/yessky/selector/issues",
   "licenses": [
     {
       "type": "MIT",
-      "url": "https://github.com/yessky/kquery/blob/master/LICENSE-MIT"
+      "url": "https://github.com/yessky/selector/blob/master/LICENSE-MIT"
     }
   ],
-  "keywords": []
+  "keywords": ["css3","selector","compile"]
 }
