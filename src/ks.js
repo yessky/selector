@@ -414,16 +414,6 @@ function setContext( doc ) {
  * Tokenize component
  */
 
-
-var shortcuts = {
-	'active': 1, 'root': 1, 'link': 1, 'visited': 1,
-	'checked': 1, 'enabled': 1, 'disabled': 1
-};
-
-var optimas = {' ': 1, '~': 1};
-
-var tokenCache = createCache();
-
 function prechild( m ) {
 	// numeric x and y parameters
 	// remember that false/true cast respectively to 0/1
@@ -446,91 +436,92 @@ function preattr( m ) {
 	return m.slice( 0, 3 );
 }
 
+var tokenCache = createCache(),
+	optimas = {' ': 1, '~': 1},
+	args_pseudo = {lang: 1, has: 1, not: 1},
+	shortcuts = {
+		active: 1, root: 1, link: 1, visited: 1,
+		checked: 1, enabled: 1, disabled: 1
+	};
+
 function tokenize( selector, isParser ) {
-	var cached = tokenCache[ selector + ' ' ],
-		deep = 0, text, matches, group, chunk, token, expr, type;
+	var cached = tokenCache[ selector + ' ' ], deep = 0,
+		remain, sets, group, chunk, token, mathed, type;
 
 	if ( cached ) {
 		return isParser ? 0 : cached.slice(0);
 	}
 
 	//console.time('x')
-	text = selector;
+	remain = selector;
 	group = [ chunk = [] ];
 
-	while ( text ) {
+	while ( remain ) {
 		// Comma
-		if ( (matches = rcomma.exec( text )) ) {
+		if ( (sets = rcomma.exec( remain )) ) {
 			// Trailing combinator is invalid
 			if ( !token || token.type in combinators ) { break; }
 			// Trailing commas is invalid
-			text = text.substr( matches[0].length ) || text;
-			deep = 0;
+			remain = remain.substr( sets[0].length ) || remain;
 			group.push( chunk = [] );
+			deep = 0;
 		}
 
-		expr = false;
+		mathed = false;
 
 		// Combinators
-		if ( (matches = rcombinators.exec( text )) ) {
+		if ( (sets = rcombinators.exec( remain )) ) {
 			// Consecutive combinators is invalid
 			if ( token && token.type in combinators ) { break; }
 			chunk.deep = ++deep;
-			expr = matches.shift();
-			text = text.substr( expr.length );
-			chunk.push(token = {
-				text: expr,
-				type: matches[0].replace( rtrim, ' ' )
-			});
-			if ( token.type in optimas ) {
-				chunk.optima = true;
-			}
+			mathed = sets.shift();
+			remain = remain.substr( mathed.length );
+			chunk.push(token = {text: mathed, type: sets[0].replace( rtrim, ' ' )});
+			if ( token.type in optimas ) { chunk.optima = true; }
 		}
 
 		// Filters
 		for ( type in regexps ) {
-			if ( (matches = regexps[ type ].exec( text )) ) {
-				expr = matches.shift();
-				text = text.substr( expr.length );
+			if ( (sets = regexps[ type ].exec( remain )) ) {
+				mathed = sets.shift();
+				remain = remain.substr( mathed.length );
 
 				if ( type === 'ATTR' ) {
-					matches = preattr( matches );
+					sets = preattr( sets );
 				} else if ( type === 'CHILD' ) {
 					// nth-* requires argument
-					if ( typeof matches[2] === strundef ) {
-						query.error( expr );
+					if ( typeof sets[2] === strundef ) {
+						KS.error( 'expected argument for ' + mathed );
 					}
-					matches = prechild( matches );
+					sets = prechild( sets );
 				} else if ( type === 'PSEUDO' ) {
-					if ( matches[0] === 'has' || matches[0] === 'not' ) {
-						//Validate syntax of given selector
-						tokenize( matches[1] );
+					if ( sets[0] in args_pseudo ) {
+						if ( !sets[1] ) {
+							KS.error( 'expected argument for ' + sets[0] );
+						} else if ( sets[0] !== 'lang' ) {
+							//Validate syntax of given selector
+							tokenize( sets[1] );
+						}
+					} else if ( sets[1] ) {
+						KS.error( 'no argument expected for ' + sets[0] );
 					}
 				}
 
-				if ( type === 'PSEUDO' && matches[0] in shortcuts ) {
-					chunk.push(token = {
-						type: matches[0],
-						text: expr,
-						matches: matches
-					});
+				if ( type === 'PSEUDO' && sets[0] in shortcuts ) {
+					chunk.push(token = {type: sets[0], text: mathed, sets: sets});
 				} else {
-					chunk.push(token = {
-						type: type,
-						text: expr,
-						matches: matches
-					});
+					chunk.push(token = {type: type, text: mathed, sets: sets});
 				}
 			}
 		}
 
-		if ( !expr ) { break; }
+		if ( !mathed ) { break; }
 	}
 
 	//console.timeEnd('x')
 	// Trailing combinator is invalid
-	return isParser ? text.length :
-		text.length > 0 ? query.error( selector ) :
+	return isParser ? remain.length :
+		remain.length > 0 ? KS.error( selector ) :
 		tokenCache( selector, group ).slice(0);
 }
 
@@ -549,8 +540,7 @@ function dump( chunk ) {
  * Compiler component
  */
 
-var implicted = {type: ' ', text: ' '},
-	siblings = {'+': 1, '~': 1},
+var siblings = {'+': 1, '~': 1},
 	operations = {'~=': 1, '^=': 1, '$=': 1, '*=': 1};
 
 var ATTR_INTER = {type: 1, href: 1, height: 1, width: 1};
@@ -784,7 +774,7 @@ var filters = {
 				k = -1;
 				items = [];
 				while ( (token = part[++k]) ) {
-					if ( (item = filters[token.type]( token.matches, i, def )) ) {
+					if ( (item = filters[token.type]( token.sets, i, def )) ) {
 						items.push( item );
 					}
 				}
@@ -840,7 +830,7 @@ function compile( selector, chunk, deep, optima ) {
 
 			dir += 1;
 			code = 'var n' + dir + '=e;' + item( code, dir, def ) + 'e=n' + dir + ';';
-		} else if ( (item = filters[type](token.matches, dir, def)) ) {
+		} else if ( (item = filters[type](token.sets, dir, def)) ) {
 			items.push( item );
 		}
 	}
@@ -870,7 +860,7 @@ function query( selector, context, doc, discon ) {
 		}
 
 		if ( part.length === 1 && type in finders ) {
-			seed = finders[type]( part[0].matches[0], context, doc );
+			seed = finders[type]( part[0].sets[0], context, doc );
 			push.apply( result, seed );
 			continue;
 		}
@@ -897,7 +887,7 @@ function query( selector, context, doc, discon ) {
 		}
 
 		if ( index > -1 ) { part.splice( index, 1 ); }
-		seed = seed ? finders[seed.type]( seed.matches[0], context, doc ) :
+		seed = seed ? finders[seed.type]( seed.sets[0], context, doc ) :
 			byTagRaw( context );
 		if ( part.length && seed.length ) {
 			index = compile( dump(part), part, deep, optima );
@@ -927,10 +917,6 @@ query.attr = function( elem, name ) {
 
 	return scope.attributes ? elem.getAttribute( name ) || '' :
 		(val = elem.getAttributeNode(name)) && val.specified ? val.value : '';
-};
-
-query.error = function( text ) {
-	throw new Error( 'Syntax error: ' + text );
 };
 
 query.hash = function( nodeList ) {
@@ -1072,6 +1058,10 @@ KS.about = function() {
 	alert( 'KQuery - A Super Fast and Compatible CSS Selector Engine\n' +
 		'author: aaron.xiao\nemail: admin@veryos.com\n' +
 		'version: ' + version );
+};
+
+KS.error = function( text ) {
+	throw new Error( 'Syntax error: ' + text );
 };
 
 KS.compile = function( selector, doc ) {
