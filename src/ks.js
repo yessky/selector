@@ -438,7 +438,7 @@ function preattr( m ) {
 
 var tokenCache = createCache(),
 	optimas = {' ': 1, '~': 1},
-	args_pseudo = {lang: 1, has: 1, not: 1},
+	args_pseudo = {lang: 1, has: 1, not: 1, contains: 1},
 	shortcuts = {
 		active: 1, root: 1, link: 1, visited: 1,
 		checked: 1, enabled: 1, disabled: 1

@@ -1,0 +1,22 @@
+<table class="table table-bordered">
+	<thead id="perf-table-headers">
+		<th class='small selector'>selectors</th>
+		<%
+		i = -1;
+		std = '';
+		for( engine in engines ) {
+			std += "<td class='text-right' data-engine='" + engine + "'>&nbsp;</td>";
+		%>
+			<th class='text-right'><%=engine%></th>
+		<%}%>
+	</thead>
+	<tbody id="perf-table-body">
+		<%
+		i = -1;
+		while ( (selector = selectors[++i]) ) {
+		%>
+			<tr><td id='selector<%=i%>' class='small selector'>
+				<span><%=selector%></span></td><%=std%></tr>
+		<%}%>
+	</tbody>
+</table>

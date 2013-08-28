@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+		<title>KS - Selector Engine Performance Test</title>
+		<link rel="shortcut icon" href="images/favicon.ico">
+		<link rel="stylesheet" media="screen" href="style.css">
+	</head>
+	<body>
+		<header id="header">
+			<h1>Selector Engine Performance Test</h1>
+			<ul>
+				<li>Every selector engine gets its own iframe</li>
+				<li>iframes are destroyed and reset after <i>each</i> selector, so no selector can affect another</li>
+				<li>Tests are run against <a href="data/selector.html">this page</a></li>
+				<li><b>Note:</b> <code>querySelectorAll</code> and <code>querySelector</code> are nullified by default. However, you can <a href="?qsa">enable QSA</a>.</li>
+			</ul>
+		</header>
+		<article id="main" role="main" class="clear">
+			<h3>Legend</h3>
+			<table class="table table-bordered">
+				<thead>
+					<tr>
+						<th>faster</th>
+						<th>slower</th>
+						<th>exception thrown</th>
+						<th>different returned elements</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td class="green">&nbsp;</td>
+						<td class="red">&nbsp;</td>
+						<td class="black">&nbsp;</td>
+						<td class="yellow">&nbsp;</td>
+					</tr>
+				</tbody>
+			</table>
+		</article>
+		<footer>
+			<small>Copyright &copy; 2013 aaron.xiao &lt;admin@veryos.com&gt;</small>
+		</footer>
+		<script src="lib/k.js" data-main="./suite"></script>
+	</body>
+</html>
