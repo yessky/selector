@@ -53,7 +53,7 @@ _(Nothing yet)_
 ## Features
 	compatibility - all major browsers ie6+/chrome/firefox/opera/safari.
 
-	light - 20kb minified, only 5.0kB minified and gzipped.
+	light - 20kb minified, only 8.9kB minified and gzipped.
 
 	super fast - pre-compile selector to a query function or xpath expression.
 
