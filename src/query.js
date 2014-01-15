@@ -185,11 +185,11 @@ exports.error = function( message ) {
 	throw new Error( 'Invalid selector: ' + message );
 };
 
-exports.match = function( elem, selector ) {
+exports.matches = function( elem, selector, context ) {
 	var expr = selector.replace( rattributeQuotes, '="$1"]' ),
-		result;
+		ownerDocument = elem.ownerDocument, result;
 
-	if ( elem.ownerDocument !== cur ) {
+	if ( ownerDocument !== cur ) {
 		setDocument( elem );
 	}
 
@@ -205,12 +205,12 @@ exports.match = function( elem, selector ) {
 					// As well, disconnected nodes are said to be in a document
 					// fragment in IE 9
 					elem.document && elem.document.nodeType !== 11 ) {
-				return result;
+				return context ? exports.contains(context, elem) : result;
 			}
 		} catch(e) {}
 	}
 
-	return query( selector, elem.ownerDocument, [elem] ).length > 0;
+	return exports( selector, context || ownerDocument, [elem] ).length > 0;
 };
 
 exports.contains = function( a, b ) {
@@ -414,7 +414,7 @@ parse = function() {
 			// Comma/Combinators
 			if ( matched[1] ) {
 				if ( matched[1] === ',' ) {
-					chain._text = text.substr( last, (last = matched.index + 1) );
+					chain._text = text.slice( last, (last = matched.index + 1) );
 					group.push( chain = [] );
 				}
 				if ( queue.length ) {
@@ -470,7 +470,7 @@ parse = function() {
 			}
 			queue.push( unit );
 		}
-		chain._text = text.substr( last );
+		chain._text = text.slice( last );
 		return group;
 	}
 
@@ -907,7 +907,7 @@ var T_FILTER = {
 	'=': '${A}==="${1}"',
 	'!=': '${A}!=="${1}"',
 	'^=': '(t=${A})&&t.indexOf("${1}")===0',
-	'$=': '(t=${A})&&t.substr(-${L})==="${1}"',
+	'$=': '(t=${A})&&t.slice(-${L})==="${1}"',
 	'*=': '(t=${A})&&t.indexOf("${1}")!==-1',
 	'|=': '(t=${A})&&(t+"-").indexOf("${1}-")===0',
 	'~=': '/*^var r${D}=new RegExp("${S}");^*/(t=${A})&&r${D}.test(t)',
@@ -920,7 +920,7 @@ var T_FILTER = {
 	':hover': T_DOC + '${N}===doc.hoverElement',
 	':active': T_DOC + '${N}===doc.activeElement',
 	':focus': T_DOC + '${N}===doc.activeElement&&(!doc.hasFocus||doc.hasFocus())&&!!(${N}._type||${N}.href||~${N}.tabIndex)',
-	':target': '/*^var target=window.loaction&&window.loaction.hash.substr(1);^*/target&&target===${N}.id',
+	':target': '/*^var target=window.loaction&&window.loaction.hash.slice(1);^*/target&&target===${N}.id',
 	':enabled': '${N}.disabled===false',
 	':disabled': '${N}.disabled===true',
 	':checked': '(t=${N}.nodeName)&&(t==="INPUT"&&!!${N}.checked)||(t==="OPTION"&&!!${N}.selected)',
