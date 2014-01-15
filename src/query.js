@@ -205,7 +205,9 @@ exports.matches = function( elem, selector, context ) {
 					// As well, disconnected nodes are said to be in a document
 					// fragment in IE 9
 					elem.document && elem.document.nodeType !== 11 ) {
-				return context ? exports.contains(context, elem) : result;
+				// Check if it's descendant of given context
+				// "[~+>] expr" such selector will casue error
+				return context ? result && exports.contains(context, elem) : result;
 			}
 		} catch(e) {}
 	}
