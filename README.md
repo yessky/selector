@@ -29,8 +29,7 @@ In your web page:
 OR in your javascript module:
 
 ```html
-require(['path/to/query'], function(require) {
-	var query = require('path/to/query');
+require(['path/to/query'], function(query) {
 	var a = query('#id');
 	var b = query('.class');
 	var c = query('div div');
