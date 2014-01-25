@@ -3,7 +3,6 @@
  * Copyright (C) 2011 - 2013 aaron.xiao
  * Author: aaron.xiao <admin@veryos.com>
  * Version: 2.0b
- * Release: 2013/08/17
  * License: http://selector.veryos.com/MIT-LICENSE
  * Credits: 
  * Sizzle.js - http://sizzlejs.org
@@ -242,13 +241,13 @@ setDocument = function( doc ) {
 	root = doc.documentElement;
 	isHTML = root.nodeName === 'HTML';
 
-	if ( (div = root.getAttribute('_qset')) ) {
+	if ( (div = root.getAttribute('__qsignal')) ) {
 		return (docEnv = envsCache[div]);
 	}
 
 	//console.time('setDocument');
 	docEnv = { id: ++docset };
-	root.setAttribute( '_qset', docset );
+	root.setAttribute( '__qsignal', docset );
 	docEnv.byElem = 'nextElementSibling' in root;
 	docEnv.hasAttr = isNative( root.hasAttribute );
 	docEnv.qsa = isNative( doc.querySelectorAll );
@@ -258,11 +257,11 @@ setDocument = function( doc ) {
 
 	// Check if it's possible to set property for node, support IE < 9
 	try {
-		root.__qset = '';
+		root.__qsignal = '';
 		docEnv.prop = true;
-		delete root.__qset;
+		delete root.__qsignal;
 	} catch (e) {} finally {
-		root.removeAttribute('__qset');
+		root.removeAttribute('__qsignal');
 	}
 
 	// NOTE: Windows 8 Native Apps
@@ -628,7 +627,8 @@ function $_match( unit ) {
 			while ( i-- ) {
 				arr.push( '/*^var r' + (++dirruns) + '=new RegExp("(^|' + whitespace + ')${' + i + '}(' + whitespace + '|$)");^*/r' + dirruns + '.test(t)' );
 			}
-			return substitute( '(t=${N}.getAttribute("class"))&&' + arr.join(' && '), unit );
+			t = docEnv.attributes ? '(t=${N}.getAttribute("class"))&&' : '(t=${N}.className)&&';
+			return substitute( t + arr.join(' && '), unit );
 		case '^=':
 		case '$=':
 		case '*=':
