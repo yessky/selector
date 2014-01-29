@@ -1194,7 +1194,7 @@ function _queryXML( selector, context, seed ) {
 			result.push( elem );
 		}
 	} else {
-		ret = (context.ownerDocument || context).evaluate(path, context, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+		ret = (context.ownerDocument || context).evaluate(path, context, null, XPathResult.ORDERED_NODE_ITERATOR_TYPE, null);
 		while ( (elem = ret.iterateNext()) ) {
 			result.push( elem );
 		}
