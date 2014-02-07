@@ -31,6 +31,7 @@ var version = '2.0.build',
 	rwhitespace = /[\x20\t\n\r\f]+/g,
 	rescape = /"|\\/g,
 	rvars = /\/\*\^(.*?)\^\*\//g,
+	rnotdescendant = /[~+>]/,
 
 	rmatch = new RegExp( '(?:' + whitespace + '*([~+>,]|' + whitespace + ')' + whitespace + '*)?(?:([:.#]?)(' + encoding + '|\\*)|\\[' + whitespace + '*(' + encoding + ')(?:' + whitespace + '*([~^$|*!]?=)' + whitespace + '*(([\'"])((?:\\\\.|[^\\\\])*?)\\7|' + identifier + '))?' + whitespace + '*\\])', 'g' ),
 
@@ -192,7 +193,10 @@ exports.matches = function( elem, selector, context ) {
 		setDocument( elem );
 	}
 
-	if ( docEnv.matchesSelector &&
+	context = context || ownerDocument;
+
+	if ( context.nodeType === 9 && docEnv.matchesSelector &&
+		!rnotdescendant.test( expr ) &&
 		( !docEnv.rbuggyMatches || !docEnv.rbuggyMatches.test( expr ) ) &&
 		( !docEnv.rbuggyQSA     || !docEnv.rbuggyQSA.test( expr ) ) ) {
 
@@ -204,14 +208,12 @@ exports.matches = function( elem, selector, context ) {
 					// As well, disconnected nodes are said to be in a document
 					// fragment in IE 9
 					elem.document && elem.document.nodeType !== 11 ) {
-				// Check if it's descendant of given context
-				// "[~+>] expr" such selector will casue error
-				return context ? result && exports.contains(context, elem) : result;
+				return result;
 			}
 		} catch(e) {}
 	}
 
-	return exports( selector, context || ownerDocument, [elem] ).length > 0;
+	return exports( selector, context, [elem] ).length > 0;
 };
 
 exports.contains = function( a, b ) {
@@ -627,8 +629,7 @@ function $_match( unit ) {
 			while ( i-- ) {
 				arr.push( '/*^var r' + (++dirruns) + '=new RegExp("(^|' + whitespace + ')${' + i + '}(' + whitespace + '|$)");^*/r' + dirruns + '.test(t)' );
 			}
-			t = docEnv.attributes ? '(t=${N}.getAttribute("class"))&&' : '(t=${N}.className)&&';
-			return substitute( t + arr.join(' && '), unit );
+			return substitute( '(t=${N}.getAttribute("class")||${N}.className)&&' + arr.join(' && '), unit );
 		case '^=':
 		case '$=':
 		case '*=':
@@ -867,7 +868,7 @@ var T_SEED = {
 };
 var T_LEFT = 'var ${R}V={_:false};NP_${R}:{P_${R}:{${X}break NP_${R};}${R}V._=true;${Y}}';
 var T_LBODY = 'if(t=${N}h[' + T_SIGN + ']){if(t._){break P_${R};}else{break NP_${R};}}${N}h[' + T_SIGN + ']=${R}V;${X}';
-var T_LBACK = T_LBODY.replace( '${X}', 'if(${N}!==${R}){${X}}' );
+var T_LBACK = T_DOC + T_LBODY.replace( '${X}', 'if(${N}!==${R}&&${N}!==doc){${X}}' );
 var T_LPROC = {
 	'>': '/*^var ${N}h={};^*/var ${N}=${C}.parentNode;' + T_LBACK,
 	' ': '/*^var ${N}h={};^*/var ${N}=${C};while(${N}=${N}.parentNode){' + T_LBACK + '}',
