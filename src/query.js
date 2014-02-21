@@ -27,7 +27,7 @@ var version = '2.0.build',
 	rattributeQuotes = new RegExp( '=' + whitespace + '*([^\\]\'"]*?)' + whitespace + '*\\]', 'g' ),
 	rtrim = new RegExp( '^' + whitespace + '+|' + whitespace + '+$', 'g' ),
 	// Easily-parseable/retrievable ID or TAG or CLASS selectors
-	rquickExpr = /^(?:#([\w-]+)|(\w+|\*)|\.([\w-]+))$/,
+	rquickExpr = /^(?:#([\w-]+)|(\w+)|\.([\w-]+))$/,
 	rwhitespace = /[\x20\t\n\r\f]+/g,
 	rescape = /"|\\/g,
 	rvars = /\/\*\^(.*?)\^\*\//g,
@@ -119,8 +119,9 @@ function exports( selector, context, seed ) {
 		setDocument( context );
 	}
 
-	// Too many compatibility of native qsa, getElementXXX under XML Document in different browser, so use compiled query function
-	if ( isHTML && !seed && docEnv.qsa && (!docEnv.rbuggyQSA || !docEnv.rbuggyQSA.test(selector)) ) {
+	// Too many compatibility issuses of native qsa, getElementXXX under XML Document, so use compiled query instead.
+
+	if ( isHTML && !seed ) {
 		if ( (match = rquickExpr.exec( selector )) ) {
 			// Speed-up: #ID
 			if ( (m = match[1]) && docEnv.byId ) {
@@ -128,10 +129,8 @@ function exports( selector, context, seed ) {
 				return elem ? [elem] : result;
 			// Speed-up:TAG
 			} else if ( match[2] ) {
-				if ( selector !== '*' || !docEnv.byTagWithComment ) {
-					push.apply( result, context.getElementsByTagName(selector) );
-					return result;
-				}
+				push.apply( result, context.getElementsByTagName(selector) );
+				return result;
 			// Speed-up: .CLASS
 			} else if ( (m = match[3]) && docEnv.byClass && context.getElementsByClassName ) {
 				push.apply( result, context.getElementsByClassName(m) );
@@ -139,38 +138,41 @@ function exports( selector, context, seed ) {
 			}
 		}
 
-		nid = oid = uid;
-		newCtx = context;
-		newExpr = nodeType === 9 && selector;
+		if ( docEnv.qsa && (!docEnv.rbuggyQSA || !docEnv.rbuggyQSA.test(selector)) ) {
 
-		// qSA works strangely on Element-rooted queries
-		// IE 8 doesn't work on object elements
-		if ( nodeType === 1 && context.nodeName !== 'OBJECT' ) {
-			group = parse( selector );
-			arr = [];
+			nid = oid = uid;
+			newCtx = context;
+			newExpr = nodeType === 9 && selector;
 
-			if ( (oid = context.getAttribute('id')) ) {
-				nid = oid.replace( rescape, '\\$&' );
-			} else {
-				context.setAttribute( 'id', nid );
+			// qSA works strangely on Element-rooted queries
+			// IE 8 doesn't work on object elements
+			if ( nodeType === 1 && context.nodeName !== 'OBJECT' ) {
+				group = parse( selector );
+				arr = [];
+
+				if ( (oid = context.getAttribute('id')) ) {
+					nid = oid.replace( rescape, '\\$&' );
+				} else {
+					context.setAttribute( 'id', nid );
+				}
+				nid = '#' + nid;
+
+				i = group.length;
+				while ( i-- ) {
+					arr[i] = nid + group[i]._text.replace( rtrim, '' );
+				}
+				newCtx = context.parentNode || context;
+				newExpr = arr.join(',');
 			}
-			nid = '#' + nid;
 
-			i = group.length;
-			while ( i-- ) {
-				arr[i] = nid + group[i]._text.replace( rtrim, '' );
-			}
-			newCtx = context.parentNode || context;
-			newExpr = arr.join(',');
-		}
-
-		if ( newExpr ) {
-			try {
-				push.apply( result, newCtx.querySelectorAll( newExpr ) );
-				return result;
-			} catch (e) {} finally {
-				if ( !oid ) {
-					context.removeAttribute('id');
+			if ( newExpr ) {
+				try {
+					push.apply( result, newCtx.querySelectorAll( newExpr ) );
+					return result;
+				} catch (e) {} finally {
+					if ( !oid ) {
+						context.removeAttribute('id');
+					}
 				}
 			}
 		}
@@ -296,7 +298,7 @@ setDocument = function( doc ) {
 	root.removeChild( div );
 
 	// IE < 9, getAttribute bool attr works unexpectedlly
-	docEnv.boolAttrFix = !(div.getAttribute('disabled') == null);
+	docEnv.boolAttrFix = !(div.getAttribute('disabled') === null);
 
 	rbuggyQSA = [];
 	rbuggyMatches = [];
@@ -438,7 +440,7 @@ parse = function() {
 			if ( unit[0] === '*' && unit._type !== 'T' ) {
 				error();
 			}
-			if ( (matched[2] == ':') ) {
+			if ( (matched[2] === ':') ) {
 				unit._type = ':' + matched[3];
 				if ( text.charAt(index) === '(' ) {
 					index++;
@@ -494,7 +496,7 @@ function process( queue ) {
 
 	while ( i-- ) {
 		unit = queue[i];
-		if ( unit._type == '=' ) {
+		if ( unit._type === '=' ) {
 			if ( tuners[unit[0]] ) {
 				unit = make( tuners[unit[0]], [unit[1]] );
 			}
@@ -502,13 +504,13 @@ function process( queue ) {
 			unit = make( '.', [unit[1]] );
 		}
 
-		if ( unit._type == 'T' ) {
-			if ( unit[0] == '*' ) {
+		if ( unit._type === 'T' ) {
+			if ( unit[0] === '*' ) {
 				unit._type = '*';
 			} else {
 				queue._tag = unit;
 			}
-		} else if ( unit._type == '.' ) {
+		} else if ( unit._type === '.' ) {
 			if ( !queue._class ) {
 				queue._class = unit;
 			} else {
@@ -604,9 +606,10 @@ function $_attr( name ) {
 	}
 
 	name = name.toLowerCase();
-	return attrsFix[name] ?
-		name === 'class' ? attrsFix[name] : '(' + attrsFix[name] + '||"")' :
-		boolAttrs[name] && docEnv.boolAttrFix ?
+	return '${N}.getAttribute("' + name + '")';
+	return name in attrsFix ?
+		attrsFix[name] :
+		docEnv.boolAttrFix && ( name in boolAttrs ) ?
 			'(${N}.getAttribute("' + name + '")?"' + name + '":"")' :
 			'${N}.getAttribute("' + name + '")';
 }
@@ -625,11 +628,12 @@ function $_match( unit ) {
 
 	switch ( type ) {
 		case '.':
-			var i = unit.length, arr = [];
+			var i = unit.length, arr = [],
+				name = docEnv.attributes ? 'class' : 'className';
 			while ( i-- ) {
 				arr.push( '/*^var r' + (++dirruns) + '=new RegExp("(^|' + whitespace + ')${' + i + '}(' + whitespace + '|$)");^*/r' + dirruns + '.test(t)' );
 			}
-			return substitute( '(t=${N}.getAttribute("class")||${N}.className)&&' + arr.join(' && '), unit );
+			return substitute( '(t=${N}.getAttribute("' + name + '"))&&' + arr.join(' && '), unit );
 		case '^=':
 		case '$=':
 		case '*=':
@@ -976,7 +980,7 @@ function _query( selector, context, seed ) {
 		cache[ selector ] : (cache[selector] = compile(selector));
 	result = select( context );
 
-	return seed ? exports._in(seed, result) : result;
+	return seed ? exports._in( seed, result ) : result;
 }
 
 XPathParser = {
@@ -1353,7 +1357,7 @@ exports._isType = function( elem, backward ) {
 	return true;
 };
 
-parse('div.a p a');
+parse( 'div.a p a' );
 setDocument( document );
 
 // EXPOSE API
