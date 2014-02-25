@@ -27,7 +27,7 @@ var version = '2.0.build',
 	rattributeQuotes = new RegExp( '=' + whitespace + '*([^\\]\'"]*?)' + whitespace + '*\\]', 'g' ),
 	rtrim = new RegExp( '^' + whitespace + '+|' + whitespace + '+$', 'g' ),
 	// Easily-parseable/retrievable ID or TAG or CLASS selectors
-	rquickExpr = /^(?:#([\w-]+)|(\w+)|\.([\w-]+))$/,
+	rquickExpr = /^(?:#([\w-]+)|(\w+|\*)|\.([\w-]+))$/,
 	rwhitespace = /[\x20\t\n\r\f]+/g,
 	rescape = /"|\\/g,
 	rvars = /\/\*\^(.*?)\^\*\//g,
@@ -46,8 +46,7 @@ var version = '2.0.build',
 	    ':first-child': 3, ':last-child': 3, ':only-child': 3
 	},
 	tuners = {id: '#', name: 'N'},
-	envsCache = createCache(),
-	parserCache = createCache(),
+	envsCache = {},
 	compilerCache = {},
 	xpathCache = {},
 	dirruns = 0,
@@ -85,40 +84,25 @@ try {
 	};
 }
 
-function createCache() {
-	var keys = [], cache;
-
-	return (cache = function( key, value ) {
-		if ( keys.push(key) > 50 ) {
-			delete cache[ keys.shift() ];
-		}
-		return ( cache[key] = value );
-	});
-}
-
-function isNative( method ) {
-	return ( method + '' ).indexOf( '[native code]' ) !== -1;
-}
-
 function exports( selector, context, seed ) {
 	var i, result, nodeType, m, match, elem,
 		group, newCtx, newExpr, nid, oid, arr;
 
 	context = context || document;
-	result = [];
 
 	if ( !selector || typeof selector !== 'string' ) {
-		return result;
+		return [];
 	}
 
 	if ( (nodeType = context.nodeType) !== 1 && nodeType !== 9 ) {
-		return result;
+		return [];
 	}
 
 	if ( (context ? context.ownerDocument || context : document) !== cur ) {
 		setDocument( context );
 	}
 
+	result = [];
 	// Too many compatibility issuses of native qsa, getElementXXX under XML Document, so use compiled query instead.
 
 	if ( isHTML && !seed ) {
@@ -128,7 +112,7 @@ function exports( selector, context, seed ) {
 				elem = exports._byId( m, context );
 				return elem ? [elem] : result;
 			// Speed-up:TAG
-			} else if ( match[2] ) {
+			} else if ( match[2] && ( selector !== '*' || !docEnv.byTagWithComment ) ) {
 				push.apply( result, context.getElementsByTagName(selector) );
 				return result;
 			// Speed-up: .CLASS
@@ -139,7 +123,6 @@ function exports( selector, context, seed ) {
 		}
 
 		if ( docEnv.qsa && (!docEnv.rbuggyQSA || !docEnv.rbuggyQSA.test(selector)) ) {
-
 			nid = oid = uid;
 			newCtx = context;
 			newExpr = nodeType === 9 && selector;
@@ -178,9 +161,11 @@ function exports( selector, context, seed ) {
 		}
 	}
 
-	return (isHTML || docEnv.prop) ?
-		_query( selector, context, seed ) :
-		_queryXML( selector, context, seed );
+	return ((isHTML || docEnv.prop) ? qsHTML : qsXML)( selector, context, seed );
+}
+
+function isNative( method ) {
+	return ( method + '' ).indexOf( '[native code]' ) !== -1;
 }
 
 exports.error = function( message ) {
@@ -249,7 +234,6 @@ setDocument = function( doc ) {
 		return (docEnv = envsCache[div]);
 	}
 
-	//console.time('setDocument');
 	docEnv = { id: ++docset };
 	root.setAttribute( '__qsignal', docset );
 	docEnv.byElem = 'nextElementSibling' in root;
@@ -378,14 +362,15 @@ setDocument = function( doc ) {
 		':root': 9, ':active': 9, 'T': 5
 	};
 
-	//console.timeEnd('setDocument')
-	return envsCache( docset, docEnv );
+	return ( envsCache[docset] = docEnv );
 };
+
+setDocument( document );
 
 // Core: Parser and Compiler
 
 function make( type, array ) {
-	return (array._type = type, array);
+	return ( array._type = type, array );
 }
 
 function substitute( str, prop ) {
@@ -488,6 +473,8 @@ parse = function() {
 		return index < text.length ? error() : selector;
 	};
 }();
+
+parse( 'div.a p a' );
 
 function process( queue ) {
 	var seedPriors = docEnv.seedPriors,
@@ -967,7 +954,7 @@ var T_FILTER = {
 	':has': T_DOC + '(q._qset=k,t=q("${1}",${N},doc),k=q._qset,t.length>0)'
 };
 
-function _query( selector, context, seed ) {
+function qsHTML( selector, context, seed ) {
 	var signal = docEnv.signal,
 		cache, select, result;
 
@@ -976,8 +963,8 @@ function _query( selector, context, seed ) {
 	}
 
 	exports._qnum += 1;
-	select = cache.hasOwnProperty(selector) ?
-		cache[ selector ] : (cache[selector] = compile(selector));
+	select = cache.hasOwnProperty( selector ) ?
+		cache[ selector ] : ( cache[selector] = compile(selector) );
 	result = select( context );
 
 	return seed ? exports._in( seed, result ) : result;
@@ -1006,12 +993,11 @@ XPathParser = {
 		'[': '@${0}',
 		'=': '@${0}="${1}"',
 		'!=': '@${0}!="${1}"',
-		'^=': '(@${0} and starts-with(@${0},"${1}")',
-		// TODO
+		'^=': '(@${0} and starts-with(@${0},"${1}"))',
 		'$=': function( name, val ) {
-			return substitute('(@${0} and substring(@${0},string-length(@${0})-${P})="${1}"', {'0': name, '1': val, P: val.length - 1});
+			return substitute('(@${0} and substring(@${0},string-length(@${0})-${P})="${1})"', {'0': name, '1': val, P: val.length - 1});
 		},
-		'*=': '(@${0} and contains(@${0},"${1}")',
+		'*=': '(@${0} and contains(@${0},"${1}"))',
 		'|=': 'starts-with(concat(@${0},"-"),"${1}-")',
 		'~=': '(@${0} and contains(concat(" ",@${0}," ")," ${1} "))',
 
@@ -1186,22 +1172,27 @@ XPathParser = {
 	}
 };
 
-function _queryXML( selector, context, seed ) {
-	var path = xpathCache.hasOwnProperty(selector) ?
-			xpathCache[selector] :
-			(xpathCache[selector] = XPathParser.parse(selector)),
+function qsXML( selector, context, seed ) {
+	var path = xpathCache.hasOwnProperty( selector ) ?
+			xpathCache[ selector ] :
+			( xpathCache[selector] = XPathParser.parse(selector) ),
+		doc = context.ownerDocument || context,
 		result = [], ret, elem, i;
 
-	if ( typeof context.selectNodes !== strundef ) {
-		i = 0;
-		ret = context.selectNodes( path );
-		while ( (elem = ret.item(i++)) ) {
+	if ( doc.implementation && doc.implementation.createDocument ) {
+		ret = doc.evaluate( path, context, null, XPathResult.ORDERED_NODE_ITERATOR_TYPE, null );
+		while ( (elem = ret.iterateNext()) ) {
 			result.push( elem );
 		}
 	} else {
-		ret = (context.ownerDocument || context).evaluate(path, context, null, XPathResult.ORDERED_NODE_ITERATOR_TYPE, null);
-		while ( (elem = ret.iterateNext()) ) {
-			result.push( elem );
+		try {
+			doc.setProperty( 'SelectionLanguage', 'XPath' );
+		} catch (e) {}
+
+		ret = context.selectNodes( path );
+		i = ret.length;
+		while ( i-- ) {
+			result.push( ret[i] );
 		}
 	}
 
@@ -1356,9 +1347,6 @@ exports._isType = function( elem, backward ) {
 	}
 	return true;
 };
-
-parse( 'div.a p a' );
-setDocument( document );
 
 // EXPOSE API
 
