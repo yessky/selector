@@ -995,7 +995,7 @@ XPathParser = {
 		'!=': '@${0}!="${1}"',
 		'^=': '(@${0} and starts-with(@${0},"${1}"))',
 		'$=': function( name, val ) {
-			return substitute('(@${0} and substring(@${0},string-length(@${0})-${P})="${1})"', {'0': name, '1': val, P: val.length - 1});
+			return substitute('(@${0} and substring(@${0},string-length(@${0})-${P})="${1}")', {'0': name, '1': val, P: val.length - 1});
 		},
 		'*=': '(@${0} and contains(@${0},"${1}"))',
 		'|=': 'starts-with(concat(@${0},"-"),"${1}-")',
