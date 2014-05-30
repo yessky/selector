@@ -33,7 +33,7 @@ var version = '2.0.build',
 	rvars = /\/\*\^(.*?)\^\*\//g,
 	rnotdescendant = /[~+>]/,
 
-	rmatch = new RegExp( '(?:' + whitespace + '*([~+>,]|' + whitespace + ')' + whitespace + '*)?(?:([:.#]?)(' + encoding + '|\\*)|\\[' + whitespace + '*(' + encoding + ')(?:' + whitespace + '*([~^$|*!]?=)' + whitespace + '*(([\'"])((?:\\\\.|[^\\\\])*?)\\7|' + identifier + '))?' + whitespace + '*\\])', 'g' ),
+	rmatch = new RegExp( '(,)?(?:' + whitespace + '*([~+>]|' + whitespace + ')' + whitespace + '*)?(?:([:.#]?)(' + encoding + '|\\*)|\\[' + whitespace + '*(' + encoding + ')(?:' + whitespace + '*([~^$|*!]?=)' + whitespace + '*(([\'"])((?:\\\\.|[^\\\\])*?)\\8|' + identifier + '))?' + whitespace + '*\\])', 'g' ),
 
 	bools = 'checked|selected|async|autofocus|autoplay|controls|defer|' +
 		'disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped',
@@ -108,9 +108,26 @@ function exports( selector, context, seed ) {
 	if ( isHTML && !seed ) {
 		if ( (match = rquickExpr.exec( selector )) ) {
 			// Speed-up: #ID
-			if ( (m = match[1]) && docEnv.byId ) {
-				elem = exports._byId( m, context );
-				return elem ? [elem] : result;
+			if ( (m = match[1]) ) {
+				if ( nodeType === 9 ) {
+					elem = context.getElementById( m );
+					if ( elem && elem.parentNode ) {
+						// Handle the case where IE, Opera, and Webkit return items
+						// by name instead of ID
+						if ( elem.id === m ) {
+							result.push( elem );
+							return result;
+						}
+					} else {
+						return result;
+					}
+				} else {
+					// Context is not a document
+					if ( context.ownerDocument && (elem = context.ownerDocument.getElementById( m )) && docEnv.contains( context, elem ) && elem.id === m ) {
+						result.push( elem );
+						return result;
+					}
+				}
 			// Speed-up:TAG
 			} else if ( match[2] && ( selector !== '*' || !docEnv.byTagWithComment ) ) {
 				push.apply( result, context.getElementsByTagName(selector) );
@@ -392,7 +409,7 @@ parse = function() {
 			(index = regex.lastIndex, matched) : null;
 	}
 	function error() {
-		throw [ 'ParseError', text, index ];
+		throw [ 'ParseError', 'selector: ' + text, 'index: ' + index, rmatch.lastIndex ];
 	}
     function parse() {
         var queue = [],
@@ -401,12 +418,17 @@ parse = function() {
         	unit, matched, pos;
 
 		while ( (matched = match( rmatch )) ) {
-			// Comma/Combinators
+			// Comma
 			if ( matched[1] ) {
-				if ( matched[1] === ',' ) {
-					chain._text = text.slice( last, (last = matched.index + 1) );
-					group.push( chain = [] );
+				// Leading comma is invalid
+				if ( matched.index === 0 ) {
+					error();
 				}
+				chain._text = text.slice( last, (last = matched.index + 1) );
+				group.push( chain = [] );
+			}
+			//Combinators
+			if ( matched[2] ) {
 				if ( queue.length ) {
 					chain.push( queue = [] );
 				}
@@ -415,21 +437,21 @@ parse = function() {
 				}
 			}
 
-			unit = [ (matched[4] || matched[3]).replace(rescape, '\\$&') ];
-			if ( matched[6] ) {
-				pos = matched[6].charAt(0);
-				pos = (pos === '\'' || pos === '"') ? matched[6].slice( 1, -1 ) : matched[6];
+			unit = [ (matched[5] || matched[4]).replace(rescape, '\\$&') ];
+			if ( matched[7] ) {
+				pos = matched[7].charAt(0);
+				pos = (pos === '\'' || pos === '"') ? matched[7].slice( 1, -1 ) : matched[7];
 				unit.push( pos.replace(/"|\\/g, '\\$&') );
 			}
-			unit._type = matched[5] || (matched[4] ? '[' : matched[2] || 'T');
+			unit._type = matched[6] || (matched[5] ? '[' : matched[3] || 'T');
 			if ( unit[0] === '*' && unit._type !== 'T' ) {
 				error();
 			}
-			if ( (matched[2] === ':') ) {
-				unit._type = ':' + matched[3];
+			if ( (matched[3] === ':') ) {
+				unit._type = ':' + matched[4];
 				if ( text.charAt(index) === '(' ) {
 					index++;
-					if ( matched[3] === 'not' || matched[3] === 'has' ) {
+					if ( matched[4] === 'not' || matched[4] === 'has' ) {
 						pos = index;
 						// Recursively
 						unit[0] = parse();
@@ -449,7 +471,7 @@ parse = function() {
 							error();
 						}
 
-						if ( matched[3].indexOf('nth') === 0 ) {
+						if ( matched[4].indexOf('nth') === 0 ) {
 							pos = unit[0];
 							pos = (pos === 'even' ? '2n' : pos === 'odd' ? '2n+1' : (pos.indexOf('n') === -1 ? '0n': '') + pos.replace(/\s*/g, '')).split('n');
 							unit[0] = !pos[0] ? 1 : +(pos[0]) | 0;
@@ -890,8 +912,8 @@ var T_CONTEXT = {
 };
 var T_FILTER = {
 	'T': T_HTML + '/*^var ${N}t=isHTML?"${0}".toUpperCase():"${0}";^*/${N}.nodeName===${N}t',
-	'#': '${N}.id==="${0}"',
-	'N': '${N}.name==="${0}"',
+	'#': '${N}.getAttribute("id")==="${0}"',
+	'N': '${N}.getAttribute("name")==="${0}"',
 
 	'[': function() {
 		return docEnv.hasAttr ?
@@ -1352,6 +1374,7 @@ exports._isType = function( elem, backward ) {
 
 if ( typeof define === 'function' && (define.amd || define.cmd) ) {
 	define(function() { return exports; });
+	window.query = exports;
 } else {
 	window.query = exports;
 }
