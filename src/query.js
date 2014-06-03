@@ -424,17 +424,16 @@ parse = function() {
 				if ( matched.index === 0 ) {
 					error();
 				}
-				chain._text = text.slice( last, (last = matched.index + 1) );
+				chain._text = text.slice( last, (last = matched.index + 1) - 1 );
 				group.push( chain = [] );
+				chain.push( queue = [] );
 			}
 			//Combinators
 			if ( matched[2] ) {
 				if ( queue.length ) {
 					chain.push( queue = [] );
 				}
-				if ( matched[1] !== ',' ) {
-					queue._union = matched[1];
-				}
+				queue._union = matched[2];
 			}
 
 			unit = [ (matched[5] || matched[4]).replace(rescape, '\\$&') ];
@@ -1374,7 +1373,6 @@ exports._isType = function( elem, backward ) {
 
 if ( typeof define === 'function' && (define.amd || define.cmd) ) {
 	define(function() { return exports; });
-	window.query = exports;
 } else {
 	window.query = exports;
 }
