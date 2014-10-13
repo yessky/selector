@@ -9,7 +9,7 @@ Download the [production version][min] or the [development version][max].
 
 Speed Test At: <a href="http://test.veryos.com/selector/slickspeed/index.html" target="_blank">Slickspeed</a>.
 
-Testsuite At: <a href="http://test.veryos.com/selector/testsuite.html" target="_blank">Testsuite</a>.
+<!--Testsuite At: <a href="http://test.veryos.com/selector/testsuite.html" target="_blank">Testsuite</a>.-->
 
 [min]: https://raw.github.com/yessky/selector/master/dist/query.min.js
 [max]: https://raw.github.com/yessky/selector/master/src/query.js
