@@ -68,7 +68,9 @@ admin@veryos.com aaron.xiao
 
 If you have any questions, feel free to <a href="https://github.com/yessky/selector/issues/new" target="_blank">create ticket</a> or <a href="mailto:admin@veryos.com" target="_blank">contact via email</a>.
 
-weibo:  <a href="http://weibo.com/xuanziday" target="_blank">http://weibo.com/xuanziday</a>.
+weibo:  <a href="http://weibo.com/veryos" target="_blank">http://weibo.com/veryos</a>.
+
+email: admin@veryos.com
 
 ## License
 
